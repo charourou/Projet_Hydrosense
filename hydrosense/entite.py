@@ -25,11 +25,12 @@ class Entite:
         if code_region:
             parametres["code_region"] = str(code_region)
         if code_bdlisa:
-            parametres["codes_bdlisa"] = str(code_bdlisa)
+            parametres["code_bdlisa"] = str(code_bdlisa)
         print(f"Recherche des stations avec les paramètres : {parametres}...")
 
         try:
             reponse = requests.get(self.url_stations, params=parametres)
+            # print(f"URL appelée : {reponse.url}")
             reponse.raise_for_status()
             donnees = reponse.json()
 
@@ -37,7 +38,7 @@ class Entite:
             liste_stations = []
             if "data" in donnees:
                 for station in donnees["data"]:
-                    # bien récupérer le code BSS
+                    #  Recuperer un code BSS valide
                     if "bss_id" in station and station["bss_id"]:
                         liste_stations.append(station["bss_id"])
 
