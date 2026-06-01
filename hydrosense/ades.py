@@ -33,7 +33,6 @@ class GestionnairePiezometrie:
         # print(chemin_complet)
         # print(os.path.exists(chemin_complet))
 
-
         if os.path.exists(chemin_complet):
             print(f"Info: données {bss_id} déja présente")
             return pd.read_csv(chemin_complet, sep=';')
