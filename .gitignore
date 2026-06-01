@@ -3,6 +3,7 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+
 # data
 raw_data/
 data/
@@ -16,6 +17,8 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+.python-version
+
 
 # Streamlit
 .streamlit/secrets.toml
