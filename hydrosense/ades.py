@@ -32,8 +32,6 @@ class GestionnairePiezometrie:
         chemin_complet = os.path.join(self.dossier_sortie, nom_fichier)
         # print(chemin_complet)
         # print(os.path.exists(chemin_complet))
-        # print(f"Dossier de travail actuel : {os.getcwd()}")
-        # print(f"Chemin complet cherché : {os.path.abspath(chemin_complet)}")
 
 
         if os.path.exists(chemin_complet):
