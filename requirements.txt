@@ -143,3 +143,8 @@ webencodings==0.5.1
 websocket-client==1.9.0
 xarray==2025.6.1
 xyzservices==2026.3.0
+
+google-cloud-bigquery==3.41.0
+db-dtypes==1.6.0
+python-dotenv==1.2.2
+pyarrow==15.0.0

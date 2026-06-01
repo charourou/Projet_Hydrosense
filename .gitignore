@@ -22,3 +22,11 @@ venv.bak/
 
 # Streamlit
 .streamlit/secrets.toml
+
+.python-version
+
+notebooks/explore_api.ipynb
+notebooks/solo_piezo.ipynb
+
+# google credentials
+secrets/
