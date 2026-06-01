@@ -14,6 +14,8 @@ class Entite:
     def total_stations(self, date_recherche = None , nb_mesures_piezo_min = 1):
         '''
         Retourne le compte des stations nb_mesures_piezo_min
+
+        date_recherche. format = yyyy-mm-jj
         '''
         params = {"format": "json", "size": 1,
                   "nb_mesures_piezo_min" : nb_mesures_piezo_min
@@ -33,13 +35,14 @@ class Entite:
                             taille_max=5000) -> list:
         """
         Retourne la liste les stations et stocke le résultat brut JSON en mémoire.
+
+        date_recherche. format = yyyy-mm-jj
         """
         parametres = {  "format": "json",
                         "size": taille_max,
                         "nb_mesures_piezo_min" : nb_mesures_piezo_min
                         }
 
-        # Ajout des filtres
         if date_recherche:
             parametres['date_recherche'] = date_recherche
         if code_dep:
@@ -52,7 +55,7 @@ class Entite:
 
         try:
             reponse = requests.get(self.url_stations, params=parametres)
-            # print(f"URL appelée : {reponse.url}")
+            #DEBUG :  print(f"URL appelée : {reponse.url}")
             reponse.raise_for_status()
             donnees = reponse.json()
 
@@ -86,13 +89,13 @@ class Entite:
         df = pd.DataFrame(self.donnees_brutes)
 
         # - Nettoyage des informations inutiles ?
-        Index(['code_bss', 'urn_bss', 'date_debut_mesure', 'date_fin_mesure',
-       'code_commune_insee', 'nom_commune', 'x', 'y', 'codes_bdlisa',
-       'urns_bdlisa', 'geometry', 'bss_id', 'altitude_station',
-       'nb_mesures_piezo', 'code_departement', 'nom_departement', 'libelle_pe',
-       'profondeur_investigation', 'codes_masse_eau_edl', 'noms_masse_eau_edl',
-       'urns_masse_eau_edl', 'date_maj'],
-      dtype='object')
+        #     Index(['code_bss', 'urn_bss', 'date_debut_mesure', 'date_fin_mesure',
+        #    'code_commune_insee', 'nom_commune', 'x', 'y', 'codes_bdlisa',
+        #    'urns_bdlisa', 'geometry', 'bss_id', 'altitude_station',
+        #    'nb_mesures_piezo', 'code_departement', 'nom_departement', 'libelle_pe',
+        #    'profondeur_investigation', 'codes_masse_eau_edl', 'noms_masse_eau_edl',
+        #    'urns_masse_eau_edl', 'date_maj'],
+        #   dtype='object')
         colonnes_inutiles = ['','','']
 
         # 1. Formatage des dates. TODO : que faire de "date maj" ?
