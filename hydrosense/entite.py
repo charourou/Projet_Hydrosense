@@ -85,7 +85,7 @@ class Entite:
             return pd.DataFrame()
 
         df = pd.DataFrame(self.donnees_brutes)
-        # print('df en entrée : ', df.columns)
+        print('df en entrée : ', df.columns)
 
 
         # - Nettoyage des informations inutiles ?
@@ -96,10 +96,11 @@ class Entite:
         #    'profondeur_investigation', 'codes_masse_eau_edl', 'noms_masse_eau_edl',
         #    'urns_masse_eau_edl', 'date_maj'],
         #   dtype='object')
-        colonnes_inutiles = ['','','']
+        colonnes_inutiles = ['code_bss','nom_departement','noms_masse_eau_edl','urns_masse_eau_edl','date_maj']
+        df = df.drop(columns=colonnes_inutiles)
 
         # 1. Formatage des dates. TODO : que faire de "date maj" ?
-        colonnes_dates = ['date_debut_mesure', 'date_fin_mesure', 'date_maj']
+        colonnes_dates = ['date_debut_mesure', 'date_fin_mesure']
         for col in colonnes_dates:
             if col in df.columns:
                 df[col] = df[col].apply(convertir_date_safe)
@@ -107,9 +108,13 @@ class Entite:
         # 2. Aplatissement des listes (ex: codes_bdlisa renvoie souvent ["113AC10"])
         # Pour faire un DataFrame propre et exportable, on transforme les listes en chaînes de caractères.
         colonnes_listes = ['codes_bdlisa', 'urns_bdlisa', 'codes_masse_eau_edl', 'noms_masse_eau_edl']
+        colonnes_listes = ['codes_bdlisa', 'urns_bdlisa', 'codes_masse_eau_edl']
         for col in colonnes_listes:
             if col in df.columns:
                 df[col] = df[col].apply(lambda x: ",".join(map(str, x)) if isinstance(x, list) else x)
+
+
+        df.sort_index(axis = 1 , inplace = True)
 
         self.catalogue_df = df
         print(f"-> Catalogue structuré en DataFrame ({df.shape[0]} lignes, {df.shape[1]} colonnes).")
@@ -132,4 +137,5 @@ def convertir_date_safe(valeur):
 if __name__ == "__main__":
     instance = Entite()
     liste_stations = instance.rechercher_stations(code_dep='44', date_recherche='2025-05-05')
-    print(liste_stations)
+
+    print(instance.generer_df().head())
