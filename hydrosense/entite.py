@@ -29,7 +29,7 @@ class Entite:
         print(f"Nombre total de stations trouvées : {total_stations}")
 
 
-    def rechercher_stations(self, code_dep=None, code_region=None, code_bdlisa=None,
+    def rechercher_stations(self, code_dep=None, code_bdlisa=None,
                             date_recherche= None,
                             nb_mesures_piezo_min = 1,
                             taille_max=5000) -> list:
@@ -47,8 +47,6 @@ class Entite:
             parametres['date_recherche'] = date_recherche
         if code_dep:
             parametres["code_departement"] = str(code_dep)
-        if code_region:
-            parametres["code_region"] = str(code_region)
         if code_bdlisa:
             parametres["code_bdlisa"] = str(code_bdlisa)
         print(f"Recherche des stations avec les paramètres : {parametres}...")
@@ -87,6 +85,8 @@ class Entite:
             return pd.DataFrame()
 
         df = pd.DataFrame(self.donnees_brutes)
+        # print('df en entrée : ', df.columns)
+
 
         # - Nettoyage des informations inutiles ?
         #     Index(['code_bss', 'urn_bss', 'date_debut_mesure', 'date_fin_mesure',
@@ -127,3 +127,9 @@ def convertir_date_safe(valeur):
         return pd.to_datetime(str(valeur), utc=True)
     except:
         return pd.NaT
+
+
+if __name__ == "__main__":
+    instance = Entite()
+    liste_stations = instance.rechercher_stations(code_dep='44', date_recherche='2025-05-05')
+    print(liste_stations)
