@@ -11,23 +11,21 @@ class Entite:
         self.catalogue_df = pd.DataFrame() # Stockera le DataFrame structuré
 
 
-    def rechercher_stations(self, code_dep=None, code_region=None, code_bdlisa=None, taille_max=5000):
+    def rechercher_stations(self, code_dep=None, code_region=None, code_bdlisa=None, taille_max=5000) -> list:
         """
-        liste les stations et stocke le résultat brut JSON.
+        Retourne la liste les stations et stocke le résultat brut JSON en mémoire.
         """
-        parametres = {
-            "format": "json",
-            "size": taille_max
-        }
+        parametres = {  "format": "json",
+                        "size": taille_max
+                        }
 
-        # Ajout dynamique des filtres
+        # Ajout des filtres
         if code_dep:
             parametres["code_departement"] = str(code_dep)
         if code_region:
             parametres["code_region"] = str(code_region)
         if code_bdlisa:
             parametres["codes_bdlisa"] = str(code_bdlisa)
-
         print(f"Recherche des stations avec les paramètres : {parametres}...")
 
         try:
@@ -35,7 +33,7 @@ class Entite:
             reponse.raise_for_status()
             donnees = reponse.json()
 
-            # Extraction des bss_id
+            # Extraction des bss_id dans une liste.
             liste_stations = []
             if "data" in donnees:
                 for station in donnees["data"]:
@@ -54,9 +52,9 @@ class Entite:
             return []
 
 
-    def generer_df(self):
+    def generer_df(self) -> pd.DataFrame:
         """
-        Transforme les données brutes JSON
+        Transforme les données brutes JSON en pd.DataFrame
         """
         if not self.donnees_brutes:
             print("Le JSON brut est vide")
@@ -64,14 +62,14 @@ class Entite:
 
         df = pd.DataFrame(self.donnees_brutes)
 
-        # 1. Formatage des dates
+        # 1. Formatage des dates. TODO : que faire de "date maj" ?
         colonnes_dates = ['date_debut_mesure', 'date_fin_mesure', 'date_maj']
         for col in colonnes_dates:
             if col in df.columns:
                 df[col] = df[col].apply(convertir_date_safe)
 
         # 2. Aplatissement des listes (ex: codes_bdlisa renvoie souvent ["113AC10"])
-        # Pour faire un DataFrame propre et exportable, on transforme les listes en chaînes
+        # Pour faire un DataFrame propre et exportable, on transforme les listes en chaînes de caractères.
         colonnes_listes = ['codes_bdlisa', 'urns_bdlisa', 'codes_masse_eau_edl', 'noms_masse_eau_edl']
         for col in colonnes_listes:
             if col in df.columns:
@@ -83,10 +81,13 @@ class Entite:
 
 
 def convertir_date_safe(valeur):
-    # Si c'est vide ou nul, on retourne Not-a-Time
+    '''
+    Fonction pour supprimer les bugs pour les dates
+    '''
+
     if pd.isna(valeur) or valeur == "None":
         return pd.NaT
     try:
         return pd.to_datetime(str(valeur), utc=True)
-    except Exception:
+    except:
         return pd.NaT
