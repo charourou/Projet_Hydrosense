@@ -10,6 +10,15 @@ class Entite:
         self.donnees_brutes = [] # Stockera le JSON brut (liste de dictionnaires)
         self.catalogue_df = pd.DataFrame() # Stockera le DataFrame structuré
 
+    def total_stations(self):
+        '''
+        Retourne le compte des stations.
+        '''
+        params = {"format": "json", "size": 1}
+
+        reponse = requests.get(self.url_stations, params=params).json()
+        total_stations = reponse.get("count")
+        print(f"Nombre total de stations trouvées : {total_stations}")
 
     def rechercher_stations(self, code_dep=None, code_region=None, code_bdlisa=None, taille_max=5000) -> list:
         """
