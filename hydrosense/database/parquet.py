@@ -11,6 +11,7 @@ DATASET_ID = os.environ.get("BQ_DATASET_ID")
 TABLE_ID = "chroniques_piezo"
 TEMP_PARQUET_FILE = "all_chroniques.parquet"
 
+# Vérification de l'inclusion dans la liste des stations autorisées
 STATIONS_AUTORISEES = []
 
 client = bigquery.Client(project=PROJECT_ID)
@@ -56,20 +57,16 @@ def pipeline_local_to_parquet():
 
         # Vérification de l'inclusion dans la liste des stations autorisées
         if STATIONS_AUTORISEES and (bss_id not in STATIONS_AUTORISEES):
-            # Optionnel : décommentez la ligne ci-dessous si vous voulez voir les fichiers ignorés
-            # print(f"Filtré : {code_bss} n'est pas dans la liste autorisée.")
             continue
 
         try:
             # Lecture du CSV individuel
             df_filtered = pd.read_csv(file_path, sep = ';')
-            df_filtered['bss_id'] = bss_id
 
-            # Nettoyage rapide des types
+            df_filtered['bss_id'] = bss_id
             df_filtered['date_mesure'] = pd.to_datetime(df_filtered['date_mesure']).dt.date
             df_filtered['niveau_nappe_eau'] = pd.to_numeric(df_filtered['niveau_nappe_eau'], errors='coerce')
             df_filtered['profondeur_nappe'] = pd.to_numeric(df_filtered['profondeur_nappe'], errors='coerce')
-            # df_filtered = df_filtered.dropna(subset=['niveau_nappe'])
 
             all_chunks.append(df_filtered)
 
@@ -99,6 +96,7 @@ def upload_to_bigquery():
     job_config = bigquery.LoadJobConfig(
             source_format=bigquery.SourceFormat.PARQUET,
             write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
+            # Remplacer WRITE_APPEND par WRITE_TRUNCATE
             schema=schema,
         )
 
@@ -113,6 +111,6 @@ def upload_to_bigquery():
         os.remove(TEMP_PARQUET_FILE)
 
 if __name__ == "__main__":
-    # create_optimized_table()
-    # pipeline_local_to_parquet()
+    create_optimized_table()
+    pipeline_local_to_parquet()
     upload_to_bigquery()
