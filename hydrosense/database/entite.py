@@ -82,7 +82,7 @@ class Entite:
                 'profondeur_investigation', 'codes_masse_eau_edl', 'noms_masse_eau_edl',
                 'urns_masse_eau_edl', 'date_maj']
 
-    def generer_df(self) -> pd.DataFrame:
+    def generer_df(self, raw = True) -> pd.DataFrame:
         """
         Transforme les données brutes JSON en pd.DataFrame
         """
@@ -94,11 +94,13 @@ class Entite:
         print('df en entrée : ', df.columns)
 
 
-        if False: # Colonnes inutiles
-            colonnes_inutiles = ['code_bss','nom_departement','noms_masse_eau_edl','urns_masse_eau_edl','date_maj']
+        if not raw:   # Colonnes inutiles
+            colonnes_inutiles = ['code_bss','nom_departement','libelle_pe','code_commune_insee',
+                                 'noms_masse_eau_edl','geometry','urns_bdlisa','urn_bss',
+                                 'urns_masse_eau_edl','date_maj']
             df = df.drop(columns=colonnes_inutiles)
 
-        # 1. Formatage des dates. TODO : que faire de "date maj" ?
+        # 1. Formatage des dates.
         colonnes_dates = ['date_debut_mesure', 'date_fin_mesure','date_maj']
         for col in colonnes_dates:
             if col in df.columns:
@@ -107,7 +109,6 @@ class Entite:
         # 2. Aplatissement des listes (ex: codes_bdlisa renvoie souvent ["113AC10"])
         # Pour faire un DataFrame propre et exportable, on transforme les listes en chaînes de caractères.
         colonnes_listes = ['codes_bdlisa', 'urns_bdlisa', 'codes_masse_eau_edl', 'noms_masse_eau_edl']
-        # colonnes_listes = ['codes_bdlisa', 'urns_bdlisa', 'codes_masse_eau_edl']
         for col in colonnes_listes:
             if col in df.columns:
                 df[col] = df[col].apply(lambda x: ",".join(map(str, x)) if isinstance(x, list) else x)
@@ -139,4 +140,4 @@ if __name__ == "__main__":
     instance = Entite()
     liste_stations = instance.rechercher_stations(code_dep='44', date_recherche='2025-05-05')
 
-    print(instance.generer_df().head())
+    print(instance.generer_df(raw = False).head())
