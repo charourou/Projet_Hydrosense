@@ -11,6 +11,7 @@ DATASET = os.getenv("BQ_DATASET_ID")
 client = bigquery.Client(project=GCP_PROJECT_ID)
 
 # Chargement des données
+@st.cache_data
 def load_piezo():
     query = f"""
         SELECT *
@@ -18,6 +19,7 @@ def load_piezo():
     """
     return client.query(query).to_dataframe()
 
+@st.cache_data
 def load_catalog():
     query = f"""
         SELECT *
