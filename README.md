@@ -78,3 +78,9 @@ BIGQUERY_DATASET=piezometry
 ```
 
 ---
+
+## Lancement du Streamlit App
+
+(1ere installation) : make install
+
+run install (pour lancer l'app)
