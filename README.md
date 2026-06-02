@@ -73,8 +73,10 @@ pip install -r requirements.txt
 Crée un fichier `.env` à la racine :
 
 ```
+GOOGLE_APPLICATION_CREDENTIALS= chemin absolu vers hydro-sense-498112-d8b48c4804b5.json
+
 GOOGLE_PROJECT_ID=hydro-sense-498112
-BIGQUERY_DATASET=piezometry
+BQ_DATASET_ID=piezometry
 ```
 
 ---
