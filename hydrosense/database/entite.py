@@ -75,6 +75,12 @@ class Entite:
             self.donnees_brutes = []
             return []
 
+    ADES_COLS =  ['code_bss', 'urn_bss', 'date_debut_mesure', 'date_fin_mesure',
+                'code_commune_insee', 'nom_commune', 'x', 'y', 'codes_bdlisa',
+                'urns_bdlisa', 'geometry', 'bss_id', 'altitude_station',
+                'nb_mesures_piezo', 'code_departement', 'nom_departement', 'libelle_pe',
+                'profondeur_investigation', 'codes_masse_eau_edl', 'noms_masse_eau_edl',
+                'urns_masse_eau_edl', 'date_maj']
 
     def generer_df(self) -> pd.DataFrame:
         """
@@ -88,19 +94,12 @@ class Entite:
         print('df en entrée : ', df.columns)
 
 
-        # - Nettoyage des informations inutiles ?
-        #     Index(['code_bss', 'urn_bss', 'date_debut_mesure', 'date_fin_mesure',
-        #    'code_commune_insee', 'nom_commune', 'x', 'y', 'codes_bdlisa',
-        #    'urns_bdlisa', 'geometry', 'bss_id', 'altitude_station',
-        #    'nb_mesures_piezo', 'code_departement', 'nom_departement', 'libelle_pe',
-        #    'profondeur_investigation', 'codes_masse_eau_edl', 'noms_masse_eau_edl',
-        #    'urns_masse_eau_edl', 'date_maj'],
-        #   dtype='object')
-        colonnes_inutiles = ['code_bss','nom_departement','noms_masse_eau_edl','urns_masse_eau_edl','date_maj']
-        df = df.drop(columns=colonnes_inutiles)
+        if False: # Colonnes inutiles
+            colonnes_inutiles = ['code_bss','nom_departement','noms_masse_eau_edl','urns_masse_eau_edl','date_maj']
+            df = df.drop(columns=colonnes_inutiles)
 
         # 1. Formatage des dates. TODO : que faire de "date maj" ?
-        colonnes_dates = ['date_debut_mesure', 'date_fin_mesure']
+        colonnes_dates = ['date_debut_mesure', 'date_fin_mesure','date_maj']
         for col in colonnes_dates:
             if col in df.columns:
                 df[col] = df[col].apply(convertir_date_safe)
@@ -108,16 +107,17 @@ class Entite:
         # 2. Aplatissement des listes (ex: codes_bdlisa renvoie souvent ["113AC10"])
         # Pour faire un DataFrame propre et exportable, on transforme les listes en chaînes de caractères.
         colonnes_listes = ['codes_bdlisa', 'urns_bdlisa', 'codes_masse_eau_edl', 'noms_masse_eau_edl']
-        colonnes_listes = ['codes_bdlisa', 'urns_bdlisa', 'codes_masse_eau_edl']
+        # colonnes_listes = ['codes_bdlisa', 'urns_bdlisa', 'codes_masse_eau_edl']
         for col in colonnes_listes:
             if col in df.columns:
                 df[col] = df[col].apply(lambda x: ",".join(map(str, x)) if isinstance(x, list) else x)
 
         # Ordre alphabetique
         df.sort_index(axis = 1 , inplace = True)
-        
+
 
         self.catalogue_df = df
+        print('df en sortie : ', df.columns)
         print(f"-> Catalogue structuré en DataFrame ({df.shape[0]} lignes, {df.shape[1]} colonnes).")
         return self.catalogue_df
 
