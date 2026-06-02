@@ -149,3 +149,5 @@ python-dotenv
 pyarrow
 
 streamlit
+folium
+streamlit-folium
