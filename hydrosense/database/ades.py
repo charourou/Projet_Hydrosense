@@ -30,13 +30,12 @@ class GestionnairePiezometrie:
         # Verifier que la donnée est exite peut-être
         nom_fichier = f"piezo_{bss_id.replace('/', '_')}.csv"
         chemin_complet = os.path.join(self.dossier_sortie, nom_fichier)
-        # print(chemin_complet)
-        # print(os.path.exists(chemin_complet))
+        # print(chemin_complet) print(os.path.exists(chemin_complet))
 
         if os.path.exists(chemin_complet):
             print(f"Info: données {bss_id} déja présente")
             return pd.read_csv(chemin_complet, sep=';')
-        # early exists
+        # early exit
 
 
         #  selection des champs OPTIONNEL
@@ -45,7 +44,6 @@ class GestionnairePiezometrie:
         # Tout les champs - Attention NE PAS GARDER TOUT LES CHAMPS POUR DES sauvegardes de masse.
         if False:
             url = f"{self.url_base}?bss_id={bss_id}&size=20000&"
-
 
         # - - - - - - - - - - - - - - - - - - - - - - - - - - - -
         print(f"Téléchargement de {bss_id}...")
