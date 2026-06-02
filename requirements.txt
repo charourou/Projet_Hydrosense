@@ -147,3 +147,5 @@ google-cloud-bigquery
 db-dtypes
 python-dotenv
 pyarrow
+
+streamlit
