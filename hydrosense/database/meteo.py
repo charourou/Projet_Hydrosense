@@ -131,16 +131,20 @@ class CatalogueMeteo:
             df_complet = pd.concat(liste_dfs, ignore_index=True)
             resultat_final[st] = self._nettoyer_donnees(df_complet)
 
+
         print("✅ Extraction départementale terminée !")
         return resultat_final
 
 
+
+
 if __name__ == '__main__':
     meteo = CatalogueMeteo(dossier_cache="raw_data/meteo")
-    df_test = meteo.extraire_departement("44")
+    db_test = meteo.extraire_departement("44")
 
-    print(df_test)
 
-    key = list(df_test.keys())[1]
-    print(key)
-    print(df_test[key] )
+    for df in db_test.values():
+        print(df['date_RR'].diff().unique())
+    # key = list(df_test.keys())[1]
+    # print(key)
+    # print(df_test[key] )
