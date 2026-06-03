@@ -1,77 +1,150 @@
-import pandas as pd
+import os, re
 import requests
-from io import StringIO
-import os
+import pandas as pd
+import warnings
+
+# Désactivation des alertes de types mixtes fréquentes sur les CSV Météo-France
+warnings.filterwarnings('ignore', category=pd.errors.DtypeWarning)
 
 class CatalogueMeteo:
-    """Gestion du catalogue des stations Météo-France (Open Data)."""
+    """Gestionnaire d'extraction des données Météo-France via data.gouv.fr."""
 
-    def __init__(self, source_csv):
-        """Initialise l'extracteur avec une URL data.gouv ou le chemin d'un fichier local."""
-        self.source = source_csv
+    DATASET_ID = "6569b51ae64326786e4e8e1a"
+    API_URL = f"https://www.data.gouv.fr/api/1/datasets/{DATASET_ID}/"
 
-    def recuperer_donnees_brutes(self) -> pd.DataFrame:
-        """Charge le CSV depuis une URL ou un fichier local avec le bon encodage."""
-        print(f"Chargement des données Météo depuis : {self.source}")
+    def __init__(self, dossier_cache="raw_data/meteo"):
+        self.dossier_cache = dossier_cache
+        os.makedirs(self.dossier_cache, exist_ok=True)
 
-        if self.source.startswith("http"):
-            response = requests.get(self.source)
-            response.raise_for_status()
-            df = pd.read_csv(StringIO(response.text), sep=';')
-        else:
-            if not os.path.exists(self.source):
-                raise FileNotFoundError(f"Le fichier {self.source} est introuvable.")
-            df = pd.read_csv(self.source, sep=';')
-        return df
+    def _obtenir_urls_dept(self, code_dept: str) -> list:
+        """Récupère dynamiquement les URLs des fichiers d'un département."""
+        reponse = requests.get(self.API_URL)
+        reponse.raise_for_status()
 
-    def preparer_catalogue_bigquery(self) -> pd.DataFrame:
+        prefixe = f"QUOT_departement_{code_dept}_"
+        return [{'titre': res.get('title'), 'url': res.get('url')}
+                for res in reponse.json().get('resources', [])
+                if res.get('title', '').startswith(prefixe) and "RR-T-Vent" in res.get('title', '')
+                ]
+
+    def _trier_urls_recentes_en_premier(self, urls: list) -> list:
+        """Trie les fichiers pour mettre la période la plus récente en premier."""
+        def extraire_annee_max(url_info):
+            # Cherche toutes les années (4 chiffres) dans le titre du fichier
+            annees = re.findall(r'\d{4}', url_info['titre'])
+            return max([int(a) for a in annees]) if annees else 0
+
+        return sorted(urls, key=extraire_annee_max, reverse=True)
+
+    def _telecharger_fichier(self, url: str, chemin_local: str):
+        if not chemin_local.endswith('.csv.gz'):
+            chemin_local += '.csv.gz'
+
+        if not os.path.exists(chemin_local):
+            print(f"Téléchargement : {os.path.basename(chemin_local)}...")
+            with requests.get(url, stream=True) as r:
+                r.raise_for_status()
+                with open(chemin_local, 'wb') as f:
+                    for chunk in r.iter_content(chunk_size=8192):
+                        f.write(chunk)
+
+        return chemin_local
+
+    def _nettoyer_donnees(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Formatage des dates et typage des variables climatiques."""
+
+        # Extraction de l'objet date pur
+        dates_datetime = pd.to_datetime(df['AAAAMMJJ'], format='%Y%m%d', errors='coerce')
+        df['date_RR'] = dates_datetime.dt.date
+
+        # LAT/LON :
+        for col in ['LAT', 'LON']:
+            if col in df.columns:
+                # remplace les éventuelles virgules françaises par des points
+                df[col] = df[col].astype(str).str.replace(',', '.')
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+
+        # Variables climatiques cibles
+        cibles = ['RR', 'TM', 'FFM']
+        for col in cibles:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+
+        # Sélection stricte et tri chronologique
+        colonnes_utiles = ['NUM_POSTE','date_RR', 'LAT', 'LON' ] + cibles
+        colonnes_existantes = [c for c in colonnes_utiles if c in df.columns]
+
+        return df[colonnes_existantes].sort_values(by='date_RR').reset_index(drop=True)
+
+    def extraire_departement(self, code_dept: str) -> dict:
         """
-        Nettoie le DataFrame et crée la colonne geometry (WKT) pour BigQuery.
+        Télécharge les données d'un département, identifie les stations actives
+        et ne récupère l'historique que pour ces stations.
+        Retourne un dictionnaire : { 'code_station': DataFrame_nettoyé }
         """
-        df = self.recuperer_donnees_brutes()
+        urls = self._obtenir_urls_dept(code_dept)
+        urls_triees = self._trier_urls_recentes_en_premier(urls)
 
-        # Normalisation des colonnes
-        df.columns = [c.upper().strip() for c in df.columns]
+        if not urls_triees:
+            print(f"Aucune URL trouvée pour le département {code_dept}")
+            return {}
 
-        # Détection adaptative des colonnes clés
-        col_id = 'NUM_POSTE' if 'NUM_POSTE' in df.columns else 'POSTE'
-        col_nom = 'NOM_USUEL' if 'NOM_USUEL' in df.columns else 'NOM_STATION'
-        col_lat = 'LAT' if 'LAT' in df.columns else 'LATITUDE'
-        col_lon = 'LON' if 'LON' in df.columns else 'LONGITUDE'
+        donnees_par_station = {}
 
-        # 2. Filtrage des lignes sans coordonnées
-        df_clean = df.dropna(subset=[col_lat, col_lon]).copy()
+        #  Le fichier le plus récent définit les stations cibles ---
+        fichier_recent = urls_triees[0]
+        chemin_recent = os.path.join(self.dossier_cache, fichier_recent['titre']) + '.csv.gz'
+        self._telecharger_fichier(fichier_recent['url'], chemin_recent)
 
-        # Conversion numérique (gestion des virgules françaises vs points décimaux)
-        df_clean[col_lat] = pd.to_numeric(df_clean[col_lat].astype(str).str.replace(',', '.'), errors='coerce')
-        df_clean[col_lon] = pd.to_numeric(df_clean[col_lon].astype(str).str.replace(',', '.'), errors='coerce')
-        df_clean = df_clean.dropna(subset=[col_lat, col_lon])
+        print(f"🔍 Analyse du fichier de référence : {fichier_recent['titre']}")
+        df_recent = pd.read_csv(chemin_recent, sep=';', compression='gzip', dtype=str)
 
-        # 3. Création de la géométrie au format WKT : POINT(Longitude Latitude)
-        # CRUCIAL : BigQuery (comme PostGIS) demande TOUJOURS la Longitude en premier !
-        df_clean['geometry'] = df_clean.apply(
-            lambda row: f"POINT({row[col_lon]} {row[col_lat]})", axis=1
-        )
+        # Extraction des identifiants uniques DANS UN SET
+        stations_actives = set(df_recent['NUM_POSTE'].unique())
+        print(f"🎯 {len(stations_actives)} stations actives identifiées pour le {code_dept}.")
 
-        # 4. Formatage strict du schéma cible
-        catalogue_final = pd.DataFrame({
-            'num_station': df_clean[col_id].astype(str), # En texte car certains codes commencent par 0
-            'nom_station': df_clean[col_nom],
-            'geometry': df_clean['geometry']
-        })
+        # Initialisation du dictionnaire avec les données récentes
+        for st in stations_actives:
+            donnees_par_station[st] = [df_recent[df_recent['NUM_POSTE'] == st]]
 
-        print(f"✅ Catalogue Météo prêt : {len(catalogue_final)} stations formatées.")
-        return catalogue_final
+        # --- Traitement de l'historique ---
+        for res in urls_triees[1:]:
+            if 'avant' in res['titre']:
+                continue
+
+            chemin_local = self._telecharger_fichier(res['url'], os.path.join(self.dossier_cache, res['titre']))
+            print(f"📖 Récupération de l'historique : {os.path.basename(chemin_local)}")
+
+            # Lire le fichier avec le bon chemin. On ne garde que les lignes dont le NUM_POSTE est dans notre set
+            df_historique = pd.read_csv(chemin_local, sep=';', compression='gzip', dtype=str)
+            df_historique_filtre = df_historique[df_historique['NUM_POSTE'].isin(stations_actives)]
+
+            # Dispatching des données historiques par station
+            for st in df_historique_filtre['NUM_POSTE'].unique():
+                donnees_par_station[st].append(df_historique_filtre[df_historique_filtre['NUM_POSTE'] == st])
+
+        # --- Assemblage et nettoyage ---
+        print(f"⚙️ Nettoyage et assemblage final pour {len(stations_actives)} stations...")
+        resultat_final = {}
+
+        for st, liste_dfs in donnees_par_station.items():
+            df_complet = pd.concat(liste_dfs, ignore_index=True)
+            resultat_final[st] = self._nettoyer_donnees(df_complet)
+
+
+        print("✅ Extraction départementale terminée !")
+        return resultat_final
+
+
+
 
 if __name__ == '__main__':
-    meteo_file  = "/home/charourou/projects/Projet_Hydrosense/raw_data/Q_07_previous-1950-2024_RR-T-Vent.csv"
-
-    meteo_agent = CatalogueMeteo(meteo_file)
-    # 2. Nettoyage et formatage
-    df_catalogue_meteo = meteo_agent.preparer_catalogue_bigquery()
-
-    # 3. Aperçu avant l'envoi sur BigQuery
-    print(df_catalogue_meteo.head())
+    meteo = CatalogueMeteo(dossier_cache="raw_data/meteo")
+    db_test = meteo.extraire_departement("44")
 
 
-
+    for df in db_test.values():
+        print(df['date_RR'].diff().unique())
+    # key = list(df_test.keys())[1]
+    # print(key)
+    # print(df_test[key] )
