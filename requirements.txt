@@ -147,7 +147,7 @@ google-cloud-bigquery
 db-dtypes
 python-dotenv
 pyarrow
-
+pmdarima
 streamlit
 folium
 streamlit-folium
