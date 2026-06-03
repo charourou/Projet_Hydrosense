@@ -39,6 +39,19 @@ def knn_idw(valeurs, distances) -> float:
     poids = np.where(d_valides == 0, 1e10, 1.0 / (d_valides ** 2))
     return float(np.sum(v_valides * poids) / np.sum(poids))
 
+def appliquer_idw_df(df: pd.DataFrame, colonnes_cibles: list, distances: list) -> pd.Series:
+    """
+    Applique la fonction knn_idw ligne par ligne sur un DataFrame.
+    """
+    # On extrait uniquement les colonnes concernées.
+    series_idw = df[colonnes_cibles].apply(
+        lambda ligne: knn_idw(ligne.values, distances),
+        axis=1
+    )
+
+    return series_idw
+
+
 
 if __name__ == '__main__':
 
