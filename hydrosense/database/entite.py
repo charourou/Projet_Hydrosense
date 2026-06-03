@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import requests
 
 class Entite:
@@ -122,6 +123,39 @@ class Entite:
         print(f"-> Catalogue structuré en DataFrame ({df.shape[0]} lignes, {df.shape[1]} colonnes).")
         return self.catalogue_df
 
+    def generer_cat_interm(self, gestionnaire) -> pd.DataFrame:
+        """
+        Boucle sur les stations, extrait les stats et génère le catalogue intermédiaire.
+        Optionnel : fusionne le résultat avec le catalogue_raw pour garder les coordonnées géo.
+        """
+        catalogue_raw_df = self.catalogue_df
+        liste_stations = catalogue_raw_df['bss_id'].tolist()
+        print(f"Generation du catalogue intermediare sur {len(liste_stations)} stations...")
+        print('A partir de catalogue avec colonnes : ', catalogue_raw_df.columns)
+
+        stats_accumulees = []
+
+        for i, bss_id in enumerate(liste_stations, 1):
+            stats = calculer_statistiques_station(bss_id, gestionnaire)
+            if stats:
+                stats_accumulees.append(stats)
+
+            if i % 100 == 0 or i == len(liste_stations):
+                print(f"Progression : {i}/{len(liste_stations)} stations analysées.")
+
+        # Création du DataFrame intermédiaire
+        df_intermediaire = pd.DataFrame(stats_accumulees)
+
+
+        if catalogue_raw_df is not None and not df_intermediaire.empty:
+            # On s'assure d'avoir la colonne de jointure de chaque côté
+                df_intermediaire = catalogue_raw_df.merge(df_intermediaire,
+                                                            on='bss_id',
+                                                            how='left'
+                )
+
+        return df_intermediaire
+
 
 def convertir_date_safe(valeur):
     '''
@@ -134,6 +168,56 @@ def convertir_date_safe(valeur):
         return pd.to_datetime(str(valeur), utc=True)
     except:
         return pd.NaT
+
+
+def calculer_statistiques_station(bss_id, gestionnaire) -> dict:
+    """
+    Calcule les métriques clés d'une chronique piézométrique brute.
+    Assure le tri chronologique pour fiabiliser le calcul des trous de données.
+    """
+    try:
+        df = gestionnaire.telecharger_forage(bss_id)
+    except Exception:
+        return None
+
+    if df is None or df.empty:
+        return None
+
+    # # Harmonisation des colonnes
+    # # On cherche une colonne qui contient 'date' et une autre pour la valeur
+    # col_date = [c for c in df.columns if 'date' in c.lower()][0]
+    # col_niveau = [c for c in df.columns if any(x in c.lower() for x in ['niveau', 'profondeur', 'valeur', 'piezo'])][0]
+
+    # # Conversion des types
+    # df[col_date] = pd.to_datetime(df[col_date])
+    # df[col_niveau] = pd.to_numeric(df[col_niveau], errors='coerce')
+
+    # # CRUCIAL : Trier par date pour garantir que iloc[0] est le début et iloc[-1] est la fin
+    # df = df.sort_values(by=col_date).reset_index(drop=True)
+
+    y = df['niveau_nappe_eau']
+    t = pd.to_datetime(df['date_mesure'])
+    n_mesures = df.shape[0]
+
+    if n_mesures == 0:
+        return None
+
+    # Calcul de la durée théorique de la chronique en jours
+    duree_theorique_jours = (t.iloc[-1] - t.iloc[0]).days + 1
+
+    output = {
+        'bss_id': bss_id,
+        'niveau_moyen': y.mean(),
+        'niveau_max': y.max(),
+        'niveau_min': y.min(),
+        'niveau_median': y.median(),
+        'niveau_std': y.std(),
+        'total_jours_manquants': int(y.isna().sum() + (duree_theorique_jours - n_mesures))
+    }
+
+    output['taux_completude'] = round((n_mesures / duree_theorique_jours) * 100, 2) if duree_theorique_jours > 0 else 0
+
+    return output
 
 
 if __name__ == "__main__":
