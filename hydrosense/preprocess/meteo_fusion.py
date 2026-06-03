@@ -1,5 +1,5 @@
 from hydrosense.database.meteo import CatalogueMeteo
-from hydrosense.utils.geo import calc_dist
+from hydrosense.utils.geo import calc_dist, appliquer_idw_df
 import pandas as pd
 import numpy as np
 
@@ -23,8 +23,7 @@ class SynthPrecipitation():
             print("Aucune colonne de date trouvée dans df_piezo.")
 
 
-
-    def search(self, code_dep:str, n_neighbors = 1):
+    def search(self, code_dep:str, n_neighbors = 3):
         """
         Utilise le module database.meteo pour charger un dictionnaire de dataframe avec
         des données météo.
@@ -88,10 +87,16 @@ class SynthPrecipitation():
 
         df_final = self.df_piezo.copy()
 
-        for id_station, df_m in dict_meteo.items():
-            df_m_clean = df_m.copy()
+        # Listes pour stocker l'ordre exact des stations et de leurs distances
+        distances_ordonnees = []
+        ids_stations = []
 
-            # On force la date météo en datetime64 pour que la jointure
+        for id_station, infos in dict_meteo.items():
+            df_m_clean = infos['dataframe'].copy()
+            distances_ordonnees.append(infos['distance'])
+            ids_stations.append(id_station)
+
+            # On force la date météo en datetime64 pour la jointure
             df_m_clean['date_RR'] = pd.to_datetime(df_m_clean['date_RR'])
 
             # On ne garde que la date et les variables utiles pour ne pas polluer le tableau final
@@ -103,8 +108,7 @@ class SynthPrecipitation():
             renommage = {c: f"{c}_{id_station}" for c in ['RR', 'TM', 'FFM'] if c in df_m_clean.columns}
             df_m_clean.rename(columns=renommage, inplace=True)
 
-            # Jointure à GAUCHE (left merge) : on garde absolument toutes les dates du piezo,
-            # et on vient coller la météo en face. S'il manque de la météo ce jour-là, ça fera un NaN.
+            # Jointure à GAUCHE (left merge) : S'il manque de la météo ce jour-là, ça fera un NaN.
             df_final = df_final.merge(
                 df_m_clean,
                 left_on='date_mesure',
@@ -112,11 +116,22 @@ class SynthPrecipitation():
                 how='left'
             )
 
-            # Nettoyage de la colonne date_RR qui fait doublon après la jointure
-            df_final.drop(columns=['date_RR'], inplace=True)
+            df_final.drop(columns=['date_RR'], inplace=True, errors='ignore')
+
+        # ------
+        print("\n⚙️ Calcul des variables synthétiques (Pondération IDW)...")
+        variables_climatiques = ['RR', 'TM', 'FFM']
+
+        for var in variables_climatiques:
+            # On liste les colonnes fusionnées (ex: ['RR_17132001', 'RR_17154002', ...])
+            cols_var = [f"{var}_{id_st}" for id_st in ids_stations if f"{var}_{id_st}" in df_final.columns]
+
+            if cols_var:
+                # Application de notre fonction vectorisée et On arrondit à 2 décimales
+                df_final[f'{var}_synth'] = appliquer_idw_df(df_final, cols_var, distances_ordonnees)
+                df_final[f'{var}_synth'] = df_final[f'{var}_synth'].round(2)
 
         return df_final
-
 
 
 if __name__ == '__main__':
