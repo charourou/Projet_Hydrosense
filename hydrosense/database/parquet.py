@@ -6,6 +6,7 @@ from google.api_core.exceptions import Conflict
 # --- CONFIGURATION ---
 LOCAL_DATA_DIR = "/home/charourou/projects/Projet_Hydrosense/raw_data/"
 
+# TODO - > mettre un fichier params.py en place
 PROJECT_ID = os.environ.get("GCP_PROJECT_ID")
 DATASET_ID = os.environ.get("BQ_DATASET_ID")
 TABLE_ID = "chroniques_piezo"
@@ -17,14 +18,15 @@ STATIONS_AUTORISEES = []
 client = bigquery.Client(project=PROJECT_ID)
 table_ref = f"{PROJECT_ID}.{DATASET_ID}.{TABLE_ID}"
 
-def create_optimized_table():
-    """Crée la table BigQuery cible avec Partitionnement et Clustering"""
-    schema = [
+schema = [
         bigquery.SchemaField("bss_id", "STRING", mode="REQUIRED"),
         bigquery.SchemaField("date_mesure", "DATE", mode="REQUIRED"),
         bigquery.SchemaField("niveau_nappe_eau", "FLOAT", mode="REQUIRED"),
         bigquery.SchemaField("profondeur_nappe", "FLOAT", mode="REQUIRED"),
-    ]
+        ]
+
+def create_optimized_table():
+    """Crée la table BigQuery cible avec Partitionnement et Clustering"""
 
     table = bigquery.Table(table_ref, schema=schema)
     table.time_partitioning = bigquery.TimePartitioning(
@@ -51,9 +53,14 @@ def pipeline_local_to_parquet():
 
     for i, file_path in enumerate(csv_files, 1):
         nom_fichier = os.path.basename(file_path)
-        # Extraction du code BSS via une Regex (cherche ce qui suit 'piezo_')
+
+        # Extraction du code BSS 'piezo_' via une Regex
+        # gerer si le nom du fichier n'est pas un piezo_****.csv
         match = re.search(r"piezo_(.*?)\.csv", nom_fichier)
-        bss_id = match.group(1)
+        if match:
+            bss_id = match.group(1)
+        else:
+            continue
 
         # Vérification de l'inclusion dans la liste des stations autorisées
         if STATIONS_AUTORISEES and (bss_id not in STATIONS_AUTORISEES):
@@ -86,13 +93,6 @@ def pipeline_local_to_parquet():
 def upload_to_bigquery():
     print("Début du transfert vers Google Cloud BigQuery...")
 
-    schema = [
-        bigquery.SchemaField("bss_id", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("date_mesure", "DATE", mode="REQUIRED"),
-        bigquery.SchemaField("niveau_nappe_eau", "FLOAT", mode="REQUIRED"),
-        bigquery.SchemaField("profondeur_nappe", "FLOAT", mode="REQUIRED"),
-    ]
-
     job_config = bigquery.LoadJobConfig(
             source_format=bigquery.SourceFormat.PARQUET,
             write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
@@ -111,6 +111,6 @@ def upload_to_bigquery():
         os.remove(TEMP_PARQUET_FILE)
 
 if __name__ == "__main__":
-    create_optimized_table()
+    # create_optimized_table()
     pipeline_local_to_parquet()
     upload_to_bigquery()
