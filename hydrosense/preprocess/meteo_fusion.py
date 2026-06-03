@@ -13,15 +13,18 @@ class SynthPrecipitation():
     def __init__(self, df_piezo):
         """
         Reconnait un dataframe de piezometrie nettoyé qui a un pas de temps régulier et quotidien
-
+        example : le bourdet BSS001QHYH
         """
-        self.df_piezo = df_piezo
+        self.df_piezo = df_piezo.copy()
+
+        try:
+            self.df_piezo['date_mesure'] = pd.to_datetime(self.df_piezo['date_mesure'])
+        except:
+            print("Aucune colonne de date trouvée dans df_piezo.")
 
 
 
-
-
-    def search(self, code_dep, n_neighbors = 1):
+    def search(self, code_dep:str, n_neighbors = 1):
         """
         Utilise le module database.meteo pour charger un dictionnaire de dataframe avec
         des données météo.
@@ -29,19 +32,102 @@ class SynthPrecipitation():
 
         Retourne un dataframe meteo interpolé sur index de dates du dataframe piezo
         """
+        print(f"🌍 Recherche des stations météo pour le département {code_dep}...")
 
-        id_station = '44100011' # a éditer en fonction de la station météo
+        meteo = CatalogueMeteo()
+        dict_meteo_dept = meteo.extraire_departement(code_dep)
+
+        if not dict_meteo_dept:
+            print("❌ Aucune donnée météo récupérée.")
+            return {}
+
+        # Récupération des coordonnées du piézomètre.
+        # TODO chercher x et y sur cat_piezo_interm
+        # Avec un query
+        # SELECT x,y FROM `hydro-sense-498112.piezometry.cat_piezo_interm` WHERE bss_id = 'BSS001QHYH' LIMIT 1000
+
+        x_piezo, y_piezo = -0.62333209, 46.242060647 # coordonnées mannuelles
 
 
-        return dict(id_station = pd.DataFrame())
+        # Calcul des distances pour chaque station météo
+        distances_stations = []
+        for id_station, df_m in dict_meteo_dept.items():
+            if df_m.empty:
+                continue
 
+            x_station, y_station = df_m['LON'].iloc[0], df_m['LAT'].iloc[0]
+
+            distance_km = calc_dist(x_piezo, y_piezo, x_station, y_station)
+
+            distances_stations.append({
+                'id_station': id_station,
+                'distance': distance_km,
+                'dataframe': df_m
+            })
+
+        distances_stations.sort(key=lambda x: x['distance'])
+        top_stations = distances_stations[:n_neighbors]
+
+        resultat = {}
+        for item in top_stations:
+            print(f"🎯 Station météo retenue : {item['id_station']} (à {item['distance']:.2f} km)")
+
+        # On stocke le dataframe ET la distance pour le calcul des poids
+            resultat[item['id_station']] = {
+                'dataframe': item['dataframe'],
+                'distance': item['distance']
+            }
+
+        return resultat
 
 
     def merge(self, dict_meteo):
         """
-        concatenatation of the meteo information contained in the dict_meteo with self.pizeo
-
-
+        concatenatation de la meteo et du piezo
         """
 
-        return pd.DataFrame()
+        df_final = self.df_piezo.copy()
+
+        for id_station, df_m in dict_meteo.items():
+            df_m_clean = df_m.copy()
+
+            # On force la date météo en datetime64 pour que la jointure
+            df_m_clean['date_RR'] = pd.to_datetime(df_m_clean['date_RR'])
+
+            # On ne garde que la date et les variables utiles pour ne pas polluer le tableau final
+            colonnes_utiles = ['date_RR', 'RR', 'TM', 'FFM']
+            colonnes_existantes = [c for c in colonnes_utiles if c in df_m_clean.columns]
+            df_m_clean = df_m_clean[colonnes_existantes]
+
+            # Renommage dynamique pour identifier la station (ex: RR devient RR_17132001)
+            renommage = {c: f"{c}_{id_station}" for c in ['RR', 'TM', 'FFM'] if c in df_m_clean.columns}
+            df_m_clean.rename(columns=renommage, inplace=True)
+
+            # Jointure à GAUCHE (left merge) : on garde absolument toutes les dates du piezo,
+            # et on vient coller la météo en face. S'il manque de la météo ce jour-là, ça fera un NaN.
+            df_final = df_final.merge(
+                df_m_clean,
+                left_on='date_mesure',
+                right_on='date_RR',
+                how='left'
+            )
+
+            # Nettoyage de la colonne date_RR qui fait doublon après la jointure
+            df_final.drop(columns=['date_RR'], inplace=True)
+
+        return df_final
+
+
+
+if __name__ == '__main__':
+
+    test_file = '/home/charourou/projects/Projet_Hydrosense/data/piezo_bourdet_clean.csv'
+    df_piezo = pd.read_csv(test_file, sep=';')
+
+    synthetiseur = SynthPrecipitation(df_piezo)
+    departement = '79'
+    resultat = synthetiseur.search(departement)
+    print(resultat)
+
+    df_final = synthetiseur.merge(resultat)
+    print(df_final)
