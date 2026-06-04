@@ -33,3 +33,26 @@ def load_piezo_bq(bss_id: str):
     print(f"{bss_id} : {len(df)} lignes chargées")
 
     return df
+
+def info_piezo_bq(bss_id: str, raw = False):
+    """
+    Loads the information concerning the bss_id
+    either from the cat_piezo_raw or the cat_piezo_interm table.
+
+    """
+    CAT_ID = 'cat_piezo_raw' if raw else 'cat_piezo_interm'
+
+    table_ref = f"{GCP_PROJECT_ID}.{BQ_DATASET_ID}.{CAT_ID}"
+
+    query = f"""
+        SELECT *
+        FROM `{table_ref}`
+        WHERE bss_id = '{bss_id}'
+        """
+
+    client = bigquery.Client(project=GCP_PROJECT_ID)
+    info = client.query(query)
+
+    print(info)
+
+    return info
