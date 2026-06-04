@@ -34,7 +34,7 @@ def load_piezo_bq(bss_id: str):
 
     return df
 
-def info_piezo_bq(bss_id: str, raw = False):
+def info_piezo(bss_id: str, raw = False):
     """
     Loads the information concerning the bss_id
     either from the cat_piezo_raw or the cat_piezo_interm table.
