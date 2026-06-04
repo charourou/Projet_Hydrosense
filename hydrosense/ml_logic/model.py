@@ -1,0 +1,223 @@
+import numpy as np
+import time
+from colorama import Fore, Style
+from typing import Tuple, Optional
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.model_selection import GridSearchCV
+
+
+# Timing the XGBoost import
+print(Fore.BLUE + "\nLoading XGBoost..." + Style.RESET_ALL)
+start = time.perf_counter()
+from xgboost import XGBRegressor
+end = time.perf_counter()
+print(f"\n✅ XGBoost loaded ({round(end - start, 2)}s)")
+
+
+def initialize_model(
+    n_estimators: int = 300,
+    learning_rate: float = 0.05,
+    max_depth: int = 5,
+    subsample: float = 0.8,
+    colsample_bytree: float = 0.8,
+    random_state: int = 42
+) -> XGBRegressor:
+    """
+    Initialize the XGBoost Regressor with given hyperparameters.
+
+    Parameters
+    ----------
+    n_estimators     : number of boosting rounds (trees)
+    learning_rate    : step size shrinkage to prevent overfitting
+    max_depth        : maximum depth of each tree
+    subsample        : fraction of samples used per tree
+    colsample_bytree : fraction of features used per tree
+    random_state     : reproducibility seed
+
+    Returns
+    -------
+    XGBRegressor (not yet fitted)
+    """
+    model = XGBRegressor(
+        n_estimators=n_estimators,
+        learning_rate=learning_rate,
+        max_depth=max_depth,
+        subsample=subsample,
+        colsample_bytree=colsample_bytree,
+        objective="reg:squarederror",   # régression → MSE comme loss
+        random_state=random_state,
+        n_jobs=-1,                       # utilise tous les cœurs CPU
+        verbosity=0
+    )
+
+    print("✅ Model initialized")
+    return model
+
+
+def optimize_model(
+    X: np.ndarray,
+    y: np.ndarray,
+    cv: int = 3
+) -> Tuple[XGBRegressor, dict]:
+    """
+    Run a GridSearchCV to find the best XGBoost hyperparameters.
+
+    Parameters
+    ----------
+    X  : feature matrix (lags, mois, moyennes mobiles…)
+    y  : target — niveau de la nappe (float)
+    cv : number of cross-validation folds
+
+    Returns
+    -------
+    (best_model, best_params)
+    """
+    print(Fore.BLUE + "\nOptimizing hyperparameters..." + Style.RESET_ALL)
+
+    param_grid = {
+        "n_estimators":     [100, 300, 500],
+        "learning_rate":    [0.01, 0.05, 0.1],
+        "max_depth":        [3, 5, 7],
+        "subsample":        [0.7, 0.9],
+        "colsample_bytree": [0.8, 1.0]
+    }
+
+    grid_search = GridSearchCV(
+        estimator=XGBRegressor(objective="reg:squarederror", random_state=42, n_jobs=-1, verbosity=0),
+        param_grid=param_grid,
+        cv=cv,
+        scoring="neg_mean_squared_error",
+        n_jobs=-1,
+        verbose=1
+    )
+
+    grid_search.fit(X, y)
+
+    best_params = grid_search.best_params_
+    best_model  = grid_search.best_estimator_
+
+    print(f"✅ Optimization complete. Best params: {best_params}")
+    return best_model, best_params
+
+
+def train_model(
+    model: XGBRegressor,
+    X: np.ndarray,
+    y: np.ndarray,
+    X_val: Optional[np.ndarray] = None,
+    y_val: Optional[np.ndarray] = None,
+    early_stopping_rounds: int = 20
+) -> Tuple[XGBRegressor, dict]:
+    """
+    Fit the XGBoost model. Supports early stopping if validation data is provided.
+
+    Parameters
+    ----------
+    model                 : initialized XGBRegressor
+    X, y                  : training data
+    X_val, y_val          : optional validation set for early stopping
+    early_stopping_rounds : stop if no improvement after N rounds
+
+    Returns
+    -------
+    (fitted_model, training_info dict)
+    """
+    print(Fore.BLUE + "\nTraining model..." + Style.RESET_ALL)
+    start = time.perf_counter()
+
+    fit_params = {}
+    if X_val is not None and y_val is not None:
+        # Early stopping : arrête l'entraînement si le val_loss stagne
+        model.set_params(early_stopping_rounds=early_stopping_rounds)
+        fit_params["eval_set"] = [(X_val, y_val)]
+        fit_params["verbose"]  = False
+
+    model.fit(X, y, **fit_params)
+
+    end = time.perf_counter()
+
+    # Calcul de l'erreur sur le train pour le résumé
+    y_pred_train = model.predict(X)
+    train_mae    = mean_absolute_error(y, y_pred_train)
+    train_rmse   = np.sqrt(mean_squared_error(y, y_pred_train))
+
+    history = {
+        "train_mae":        round(train_mae, 4),
+        "train_rmse":       round(train_rmse, 4),
+        "n_estimators_used": model.best_iteration + 1 if hasattr(model, "best_iteration") and model.best_iteration else model.n_estimators,
+        "training_time_s":  round(end - start, 2)
+    }
+
+    print(f"✅ Model trained on {len(X)} rows in {history['training_time_s']}s")
+    print(f"   Train MAE  : {history['train_mae']}")
+    print(f"   Train RMSE : {history['train_rmse']}")
+
+    return model, history
+
+
+def evaluate_model(
+    model: XGBRegressor,
+    X: np.ndarray,
+    y: np.ndarray
+) -> dict:
+    """
+    Evaluate the trained model on a test set.
+
+    Parameters
+    ----------
+    model : fitted XGBRegressor
+    X, y  : test data (jamais vus pendant l'entraînement)
+
+    Returns
+    -------
+    metrics dict : mae, rmse, r2
+    """
+    print(Fore.BLUE + f"\nEvaluating model on {len(X)} rows..." + Style.RESET_ALL)
+
+    if model is None:
+        print(f"\n❌ No model to evaluate")
+        return None
+
+    y_pred = model.predict(X)
+
+    mae  = mean_absolute_error(y, y_pred)
+    rmse = np.sqrt(mean_squared_error(y, y_pred))
+    r2   = r2_score(y, y_pred)
+
+    metrics = {
+        "mae":  round(mae, 4),
+        "rmse": round(rmse, 4),
+        "r2":   round(r2, 4)
+    }
+
+    print(f"✅ Model evaluated on test set")
+    print(f"   MAE  : {metrics['mae']}  (erreur moyenne en mètres NGF)")
+    print(f"   RMSE : {metrics['rmse']} (pénalise les grandes erreurs)")
+    print(f"   R²   : {metrics['r2']}  (1.0 = parfait)")
+
+    return metrics
+
+
+def predict_model(
+    model: XGBRegressor,
+    X: np.ndarray
+) -> np.ndarray:
+    """
+    Generate predictions for new input data.
+
+    Parameters
+    ----------
+    model : fitted XGBRegressor
+    X     : feature matrix (même colonnes que l'entraînement)
+
+    Returns
+    -------
+    np.ndarray of predicted water table levels
+    """
+    if model is None:
+        print(f"\n❌ No model to predict with")
+        return None
+
+    y_pred = model.predict(X)
+    print(f"✅ Predicted {len(y_pred)} values")
+    return y_pred

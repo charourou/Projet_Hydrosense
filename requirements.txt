@@ -23,6 +23,7 @@ click
 click-plugins
 cligj
 cloudpickle
+colorama
 comm
 contextily
 contourpy
