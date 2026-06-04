@@ -3,3 +3,6 @@ install:
 
 run:
 	streamlit run app/main.py
+
+run_api:
+	uvicorn hydrosense.api.fast:app --reload

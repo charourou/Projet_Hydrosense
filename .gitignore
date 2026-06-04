@@ -8,6 +8,23 @@ __pycache__/
 raw_data/
 data/
 
+# inteliJ #
+.idea
+*.gz
+*PKG-INFO
+*.egg-info
+*.csv
+05-ML/**/*.txt
+06-Deep-Learning/**/*.txt
+*.zip
+mlruns
+*.sqlite
+# IDE #
+*.vscode
+
+# build
+build/
+
 # Environments
 .env
 .envrc
