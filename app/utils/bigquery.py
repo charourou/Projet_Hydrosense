@@ -12,12 +12,12 @@ client = bigquery.Client(project=GCP_PROJECT_ID)
 
 
 @st.cache_data
-def load_piezo():
-    query = f"""
-        SELECT *
-        FROM `{GCP_PROJECT_ID}.{DATASET}.piezo_test`
-    """
-    return client.query(query).to_dataframe()
+# def load_piezo():
+#     query = f"""
+#         SELECT *
+#         FROM `{GCP_PROJECT_ID}.{DATASET}.piezo_bourdet_test`
+#     """
+#     return client.query(query).to_dataframe()
 
 
 @st.cache_data
