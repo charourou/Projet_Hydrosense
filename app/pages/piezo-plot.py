@@ -1,23 +1,19 @@
 import streamlit as st
 import pandas as pd
 import altair as alt  # On importe altair pour configurer l'axe finement
-# from utils.bigquery import load_piezo
-
-st.title("📈 Courbe piézométrique (Sur 1 an)")
-
-# 1. Chargement des données
-
 from hydrosense.database.bigquery import load_piezo_bq
 from hydrosense.preprocess.cleaning import clean_piezo
+
+st.title("📈 Courbe piézométrique z (Sur 1 an)")
+
+# 1. Chargement des données
 
 df_raw = load_piezo_bq("BSS001QHYH")
 df = clean_piezo(df_raw)
 
-# 2. Nettoyage des types
-df['date_mesure'] = pd.to_datetime(df['date_mesure'])
-df['niveau_nappe_eau'] = pd.to_numeric(df['niveau_nappe_eau'], errors='coerce')
+# st.write(df.head())
 
-# 3. Filtre sur 1 an
+# 2. Filtre sur 1 an
 un_an_en_arriere = pd.Timestamp.now() - pd.Timedelta(days=365)
 df_filtre = df[df['date_mesure'] >= un_an_en_arriere]
 
