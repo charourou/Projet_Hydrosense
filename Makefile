@@ -6,3 +6,5 @@ run:
 
 run_api:
 	uvicorn hydrosense.api.fast:app --reload
+train:
+		python hydrosense/interface/main.py
