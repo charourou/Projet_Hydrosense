@@ -38,7 +38,7 @@ class SynthPrecipitation():
 
         meteo = CatalogueMeteo()
         dict_meteo_dept = meteo.extraire_departement(code_dep)
-
+        
         if not dict_meteo_dept:
             print("❌ Aucune donnée météo récupérée.")
             return {}
