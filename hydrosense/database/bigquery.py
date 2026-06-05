@@ -52,25 +52,25 @@ def info_piezo(bss_id: str, raw = False):
 
     client = bigquery.Client(project=GCP_PROJECT_ID)
     info = client.query(query)
-    
+
     return info.to_dataframe()
 
 
-def save_dataframe_to_bq(df, bss_id, project_id, dataset_id, write_mode="WRITE_TRUNCATE"):
+def save_dataframe_to_bq(df, bss_id, write_mode="WRITE_TRUNCATE"):
     """
     Enregistre dans une table BigQuery - Donneé FUSIONNEE piezo + meteo
     Format de table : pem_{bss_id}
 
     example :
-    save_dataframe_to_bq(df_final, "BSS001QHYH", GCP_PROJECT_ID, BQ_DATASET_ID)
+    save_dataframe_to_bq(df_final, "BSS001QHYH")
     """
-    client = bigquery.Client(project=project_id)
-    table_id = f"{project_id}.{dataset_id}.pem_{bss_id}"
+    client = bigquery.Client(project=GCP_PROJECT_ID)
+    table_id = f"{GCP_PROJECT_ID}.{BQ_DATASET_ID}.pem_{bss_id}"
 
     # Configuration du job de chargement
     job_config = bigquery.LoadJobConfig(
-        write_disposition=write_mode,
-    )
+                                        write_disposition=write_mode,
+                                        )
 
     try:
         job = client.load_table_from_dataframe(df, table_id, job_config=job_config)
