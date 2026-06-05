@@ -183,18 +183,6 @@ def calculer_statistiques_station(bss_id, gestionnaire) -> dict:
     if df is None or df.empty:
         return None
 
-    # # Harmonisation des colonnes
-    # # On cherche une colonne qui contient 'date' et une autre pour la valeur
-    # col_date = [c for c in df.columns if 'date' in c.lower()][0]
-    # col_niveau = [c for c in df.columns if any(x in c.lower() for x in ['niveau', 'profondeur', 'valeur', 'piezo'])][0]
-
-    # # Conversion des types
-    # df[col_date] = pd.to_datetime(df[col_date])
-    # df[col_niveau] = pd.to_numeric(df[col_niveau], errors='coerce')
-
-    # # CRUCIAL : Trier par date pour garantir que iloc[0] est le début et iloc[-1] est la fin
-    # df = df.sort_values(by=col_date).reset_index(drop=True)
-
     y = df['niveau_nappe_eau']
     t = pd.to_datetime(df['date_mesure'])
     n_mesures = df.shape[0]

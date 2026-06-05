@@ -8,8 +8,11 @@ MODEL_TARGET = ''
 GCP_PROJECT_ID=os.environ.get("GCP_PROJECT_ID")
 BQ_REGION=os.environ.get("BQ_REGION")
 BQ_DATASET_ID=os.environ.get("BQ_DATASET_ID")
+CLIM_DATASET_ID=os.environ.get("CLIM_DATASET_ID")
 BUCKET_NAME = os.environ.get("BUCKET_NAME")
 INSTANCE = os.environ.get("INSTANCE")
+
+
 
 MLFLOW_TRACKING_URI = ''
 MLFLOW_EXPERIMENT = ''
