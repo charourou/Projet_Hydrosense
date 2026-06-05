@@ -52,10 +52,8 @@ def info_piezo(bss_id: str, raw = False):
 
     client = bigquery.Client(project=GCP_PROJECT_ID)
     info = client.query(query)
-
-    print(info)
-
-    return info
+    
+    return info.to_dataframe()
 
 
 def save_dataframe_to_bq(df, bss_id, project_id, dataset_id, write_mode="WRITE_TRUNCATE"):
