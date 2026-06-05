@@ -16,11 +16,11 @@ st.set_page_config(
 pages = {
     "": [
         st.Page("pages/accueil.py",    title="🏠 Accueil"),
+        st.Page("pages/piezo-dashboard.py", title="📊 Dashboard piézométre"),
         st.Page("pages/piezo.py",      title="📈 Données piézométrique"),
-        st.Page("pages/piezo-plot.py", title="📈 Courbe piézométrique"),
         st.Page("pages/catalogue.py",  title="🗂️ Catalogue"),
         st.Page("pages/carte.py",      title="🗺️ Carte des piézos"),
-        st.Page("pages/dashboard-maquette.py",  title="📊 Dashboard-maquette"),
+        st.Page("pages/dashboard-maquette.py",  title="🖌️ Dashboard-maquette"),
     ]
 }
 
