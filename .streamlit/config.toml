@@ -1,2 +1,42 @@
 [theme]
+# Thème de base clair
 base = "light"
+
+# Couleur d'accentuation principale — bleu eau cohérent avec Hydro-Sense
+primaryColor = "#2484e5"
+
+# Couleur de fond principale — blanc cassé chaud, conservé
+backgroundColor = "#f5f5f7"
+
+# Couleur de fond secondaire — légèrement plus froid pour les métriques
+secondaryBackgroundColor = "#F0EFEC"
+
+# Couleur du texte principal — conservé
+textColor = "#3C424F"
+
+# Typographie
+headingFontSizes = ["1.8rem"]
+font = "sans-serif"
+
+# Arrondi — légèrement réduit, 1rem est assez prononcé pour les métriques
+baseRadius = "0.5rem"
+
+# Couleur des bordures — conservé
+borderColor = "#D9DBE0"
+
+# Palette graphiques :
+# 1er = bleu courbe piézométrique
+# 2e-5e = couleurs seuils (Crise, Alerte, Surveillance, Normal)
+chartCategoricalColors = [
+    "#2484e5",
+    "#f8cbad",
+    "#fce4d6",
+    "#fff2cc",
+    "#e2f0d9",
+]
+chartSequentialColors = ["#E4F5FF", "#C7EBFF", "#A6DCFF", "#83C9FF", "#60B4FF", "#3D9DF3", "#1C83E1", "#0068C9", "#0054A3", "#004280"]
+chartDivergingColors = ["#7D353B", "#BD4043", "#FF4B4B", "#FF8C8C", "#FFC7C7", "#A6DCFF", "#60B4FF", "#1C83E1", "#0054A3", "#004280"]
+
+# Bordures visibles — conservé
+showWidgetBorder = true
+showSidebarBorder = true
