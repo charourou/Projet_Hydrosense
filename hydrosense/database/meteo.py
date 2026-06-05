@@ -81,6 +81,7 @@ class CatalogueMeteo:
         Retourne un dictionnaire : { 'code_station': DataFrame_nettoyé }
         """
         urls = self._obtenir_urls_dept(code_dept)
+        print(urls)
         urls_triees = self._trier_urls_recentes_en_premier(urls)
 
         if not urls_triees:
@@ -137,7 +138,7 @@ class CatalogueMeteo:
 
 if __name__ == '__main__':
     meteo = CatalogueMeteo(dossier_cache="raw_data/meteo")
-    db_test = meteo.extraire_departement("64")
+    db_test = meteo.extraire_departement("40")
 
 
 
