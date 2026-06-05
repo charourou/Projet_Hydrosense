@@ -212,6 +212,7 @@ def calculer_statistiques_station(bss_id, gestionnaire) -> dict:
         'niveau_min': y.min(),
         'niveau_median': y.median(),
         'niveau_std': y.std(),
+        'p95_global' : y.quantile(0.95),
         'total_jours_manquants': int(y.isna().sum() + (duree_theorique_jours - n_mesures))
     }
 
