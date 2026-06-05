@@ -18,6 +18,8 @@ PREFECT_FLOW_NAME = ''
 PREFECT_LOG_LEVEL = ''
 EVALUATION_START_DATE = '2026-03-01'
 
+TARGET_COL   = "niveau_nappe_eau"
+
 ##################  CONSTANTS  #####################
 
 
