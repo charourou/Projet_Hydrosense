@@ -1,21 +1,24 @@
 from hydrosense.database.meteo import CatalogueMeteo
 from hydrosense.utils.geo import calc_dist, appliquer_idw_df
+from hydrosense.database.bigquery import info_piezo
 import pandas as pd
 import numpy as np
 
 
 class SynthPrecipitation():
     """
-    Class qui permet la création d'un pd. Dataframe avec de la donnée météorologique concomitant à un dataframe de pizeo.
-
+    Classe qui permet la création d'un nouveau pd.Dataframe
+    avec de la donnée météorologique concomitant à un dataframe de pizeo.
     """
 
-    def __init__(self, df_piezo):
+    def __init__(self, df_piezo: pd.DataFrame, bss_piezo: str):
         """
         Reconnait un dataframe de piezometrie nettoyé qui a un pas de temps régulier et quotidien
         example : le bourdet BSS001QHYH
         """
         self.df_piezo = df_piezo.copy()
+        self.bss_id = bss_piezo
+        self.info = info_piezo(bss_piezo)
 
         try:
             self.df_piezo['date_mesure'] = pd.to_datetime(self.df_piezo['date_mesure'])
@@ -40,12 +43,8 @@ class SynthPrecipitation():
             print("❌ Aucune donnée météo récupérée.")
             return {}
 
-        # Récupération des coordonnées du piézomètre.
-        # TODO chercher x et y sur cat_piezo_interm
-        # Avec un query
-        # SELECT x,y FROM `hydro-sense-498112.piezometry.cat_piezo_interm` WHERE bss_id = 'BSS001QHYH' LIMIT 1000
-
-        x_piezo, y_piezo = -0.62333209, 46.242060647 # coordonnées mannuelles
+        # Récupération des coordonnées du piézomètre grace à la fonction info_piezo
+        x_piezo, y_piezo = self.info.loc[0,'x'], self.info.loc[0,'y']
 
 
         # Calcul des distances pour chaque station météo
@@ -139,7 +138,7 @@ if __name__ == '__main__':
     test_file = '/home/charourou/projects/Projet_Hydrosense/data/piezo_bourdet_clean.csv'
     df_piezo = pd.read_csv(test_file, sep=';')
 
-    synthetiseur = SynthPrecipitation(df_piezo)
+    synthetiseur = SynthPrecipitation(df_piezo, 'BSS001QHYH')
     departement = '79'
     resultat = synthetiseur.search(departement)
     print(resultat)

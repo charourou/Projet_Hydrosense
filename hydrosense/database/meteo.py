@@ -1,5 +1,4 @@
-import os, re
-import requests
+import os, re, requests
 import pandas as pd
 import warnings
 
@@ -73,7 +72,6 @@ class CatalogueMeteo:
         # Sélection stricte et tri chronologique
         colonnes_utiles = ['NUM_POSTE','date_RR', 'LAT', 'LON' ] + cibles
         colonnes_existantes = [c for c in colonnes_utiles if c in df.columns]
-
         return df[colonnes_existantes].sort_values(by='date_RR').reset_index(drop=True)
 
     def extraire_departement(self, code_dept: str) -> dict:
@@ -137,10 +135,10 @@ class CatalogueMeteo:
 
 
 
-
 if __name__ == '__main__':
     meteo = CatalogueMeteo(dossier_cache="raw_data/meteo")
-    db_test = meteo.extraire_departement("44")
+    db_test = meteo.extraire_departement("64")
+
 
 
     for df in db_test.values():

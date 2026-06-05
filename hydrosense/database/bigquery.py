@@ -60,8 +60,11 @@ def info_piezo(bss_id: str, raw = False):
 
 def save_dataframe_to_bq(df, bss_id, project_id, dataset_id, write_mode="WRITE_TRUNCATE"):
     """
-    Enregistre un dataframe dans une table BigQuery spécifique au piézomètre.
+    Enregistre dans une table BigQuery - Donneé FUSIONNEE piezo + meteo
     Format de table : pem_{bss_id}
+
+    example :
+    save_dataframe_to_bq(df_final, "BSS001QHYH", GCP_PROJECT_ID, BQ_DATASET_ID)
     """
     client = bigquery.Client(project=project_id)
     table_id = f"{project_id}.{dataset_id}.pem_{bss_id}"
@@ -69,17 +72,12 @@ def save_dataframe_to_bq(df, bss_id, project_id, dataset_id, write_mode="WRITE_T
     # Configuration du job de chargement
     job_config = bigquery.LoadJobConfig(
         write_disposition=write_mode,
-        # Optionnel : BigQuery détecte le schéma, mais pour de l'hydrogéologie,
-        # tu pourrais vouloir définir un schéma strict pour éviter les erreurs de type.
     )
 
     try:
         job = client.load_table_from_dataframe(df, table_id, job_config=job_config)
         job.result()  # Attend la fin du job
-        logging.info(f"✅ Données chargées avec succès dans {table_id}")
+        print(f"✅ Données chargées avec succès dans {table_id}")
     except Exception as e:
-        logging.error(f"❌ Erreur lors du chargement dans BigQuery: {e}")
+        print(f"❌ Erreur lors du chargement dans BigQuery: {e}")
         raise
-
-# Utilisation dans ton pipeline :
-# save_dataframe_to_bq(df_final, "BSS001QHYH", GCP_PROJECT_ID, BQ_DATASET_ID)
