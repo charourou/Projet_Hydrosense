@@ -177,7 +177,7 @@ def pred(model, df_ml: pd.DataFrame) -> pd.Series:
     X_future       = df_ml[FEATURE_COLS].tail(3).values
     y_pred         = predict_model(model, X_future)
     last_date      = df_ml.index[-1]
-    forecast_index = pd.date_range(start=last_date, periods=4, freq="ME")[1:]
+    forecast_index = pd.date_range(start='2026-03-01', periods=13, freq="W")[1:]
     forecast       = pd.Series(y_pred, index=forecast_index, name=TARGET_COL)
 
     print(f"\n✅ pred() done:\n{forecast.to_string()}\n")
