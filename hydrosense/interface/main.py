@@ -67,7 +67,8 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     print(Fore.MAGENTA + "\n⭐️ Use case: preprocess" + Style.RESET_ALL)
 
     # Rééchantillonnage mensuel — 'ME' = Month End (pandas >= 2.2)
-    y_mensuel = df[TARGET_COL].resample("ME").mean()
+    # y_mensuel = df[TARGET_COL].resample("ME").mean()
+    y_mensuel = df.resample("ME", on="date_mesure")[TARGET_COL].mean()
 
     # Feature engineering
     df_ml = pd.DataFrame(y_mensuel)
