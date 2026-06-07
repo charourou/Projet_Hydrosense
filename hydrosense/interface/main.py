@@ -18,12 +18,16 @@ DATA_PATH    = Path("data/piezo_bourdet_clean.csv")
 DATA_CODE_PIEZO = "BSS001QHYH"
 TARGET_COL   = "niveau_nappe_eau"
 DATE_COL     = "date_mesure"
+
+# a revoir
 FEATURE_COLS = ["mois", "lag_1", "lag_2", "lag_3", "lag_12", "moyenne_3m", "moyenne_6m"]
 
 # Split : 3 derniers mois en test (Mars → Mai 2026)
-TRAIN_END  = "2026-02-28"
-TEST_START = "2026-03-01"
-TEST_END   = "2026-05-31"
+# EN DUR --- OUILLE OUILLE
+
+TRAIN_END  = "2025-02-28"
+TEST_START = "2025-03-01"
+TEST_END   = "2025-05-31"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -133,7 +137,7 @@ def train(X_train_df: pd.DataFrame, y_train_df: pd.Series, optimize: bool = True
             X_train_df.values, # Les valeurs NumPy pour l'entraînement du modèle
             y_train_df.values, # Les valeurs NumPy pour l'entraînement du modèle
             X_train_df_for_folds=X_train_df, # Le DataFrame pour la génération des folds
-            # date_column_name=DATE_COL,       # Plus nécessaire car optimize_model ne le passe plus à get_folds
+            # date_column_name=DATE_COL,  # Plus nécessaire car optimize_model ne le passe plus à get_folds
             n_splits_cv=3
         )
         print(Fore.BLUE + f"\nBest params: {best_params}" + Style.RESET_ALL)
