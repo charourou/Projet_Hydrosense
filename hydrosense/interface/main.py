@@ -133,7 +133,7 @@ def train(X_train_df: pd.DataFrame, y_train_df: pd.Series, optimize: bool = True
             X_train_df.values, # Les valeurs NumPy pour l'entraînement du modèle
             y_train_df.values, # Les valeurs NumPy pour l'entraînement du modèle
             X_train_df_for_folds=X_train_df, # Le DataFrame pour la génération des folds
-            date_column_name=DATE_COL,       # Le nom de la colonne de dates
+            # date_column_name=DATE_COL,       # Plus nécessaire car optimize_model ne le passe plus à get_folds
             n_splits_cv=3
         )
         print(Fore.BLUE + f"\nBest params: {best_params}" + Style.RESET_ALL)
@@ -209,12 +209,9 @@ if __name__ == "__main__":
     print(Fore.CYAN + "\n--- Visualisation des splits de cross-validation annuels ---" + Style.RESET_ALL)
     try:
         # get_folds attend un DataFrame avec la colonne de dates.
-        # X_train_df a 'date_mesure' comme index, donc on le reset pour le test.
-        temp_df_for_test_folds = X_train_df.reset_index()
-
         test_splits = get_folds(
-            df=temp_df_for_test_folds,
-            date_column=DATE_COL,
+            # Passe directement le DatetimeIndex de X_train_df
+            dates_series=X_train_df.index,
             n_splits=3, # Nombre de splits à visualiser
             min_train_years=3,
             val_years_duration=1
