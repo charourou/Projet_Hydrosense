@@ -138,7 +138,8 @@ def train(X_train_df: pd.DataFrame, y_train_df: pd.Series, optimize: bool = True
             y_train_df.values, # Les valeurs NumPy pour l'entraînement du modèle
             X_train_df_for_folds=X_train_df, # Le DataFrame pour la génération des folds
             # date_column_name=DATE_COL,  # Plus nécessaire car optimize_model ne le passe plus à get_folds
-            n_splits_cv=3
+            n_splits_cv=3,
+            val_months_duration=3 # Durée de la validation en mois pour la CV
         )
         print(Fore.BLUE + f"\nBest params: {best_params}" + Style.RESET_ALL)
     else:
@@ -229,7 +230,7 @@ if __name__ == "__main__":
             print(f"    Val:   {val_period.min().strftime('%Y-%m')} à {val_period.max().strftime('%Y-%m')} ({len(val_idx)} samples)")
             # Assertions pour vérifier l'absence de fuite temporelle et l'ordre chronologique
             assert train_period.max() < val_period.min(), f"Fuite temporelle détectée dans Split {i+1}!" # Vérifie l'ordre chronologique
-            assert len(val_period) == 3, f"La durée de validation n'est pas respectée. dans Split {i+1}!" # Vérifie le nombre exact de mois
+            assert len(val_period) == 3, f"La durée de validation n'est pas respectée dans Split {i+1}!" # Vérifie le nombre exact de mois
     except ValueError as e:
         print(f"  Erreur lors de la visualisation des splits: {e}")
     print(Fore.CYAN + "--- Fin de la visualisation des splits ---" + Style.RESET_ALL)

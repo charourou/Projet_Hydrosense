@@ -19,10 +19,11 @@ def get_folds(dates_series: pd.DatetimeIndex, n_splits: int = 5, min_train_years
         min_train_years (int): Nombre minimum d'années pour le premier jeu d'entraînement.
                                Le premier split aura au moins `min_train_years` d'historique dans son train set.
         val_months_duration (int): Nombre de mois à utiliser pour chaque jeu de validation.
-                                   Le mois de début de la validation sera aléatoirement Mars, Avril ou Mai.
+                                   Le mois de début de la validation sera aléatoirement Mars, Avril, Mai ou Juin.
 
     Retourne:
-        Une liste de tuples (train_idx, val_idx) utilisable dans un GridSearchCV,
+        Une liste de tuples (train_indices, val_indices) utilisable dans un GridSearchCV,
+        où les indices sont les positions entières des lignes correspondant à `dates_series`.
     """
 
     if not isinstance(dates_series, pd.DatetimeIndex):
@@ -31,7 +32,7 @@ def get_folds(dates_series: pd.DatetimeIndex, n_splits: int = 5, min_train_years
 
     # Obtenir les partitions annuelles (listes d'années de train, année de val)
     yearly_splits = split_years(dates_series, n_splits, min_train_years)
-    # Et les affiner en fonctios du nb de mois
+    # Et les affiner en fonction du nb de mois
     # TODO gerer le cas où la donnée est hebdomadaire et non mensuelle
     final_splits = refine_split(dates_series, yearly_splits, val_months_duration, random_state=42)
 
@@ -80,10 +81,13 @@ def refine_split(
     random_state: int = 42
 ) -> List[Tuple[List[int], List[int]]]:
     """
-    Sous fonction de get_folds qui termine le travail reprenant les folds de split_years
-    selectionne les val_start_month, tirage au sort [3,4,5] , random_state = 42
-    ralonge la periode d'entrainement pour qu'elle se termine juste avant la validation
-    Fournit les liste d indices (train_idx, val_idx) en tuple
+    Affine les partitions annuelles en indices mensuels pour train/validation.
+
+    Cette fonction prend les splits annuels (ex: train sur 2010-2015, val sur 2016) et les
+    transforme en listes d'indices numériques.
+    - La validation est une période de `val_months_duration` mois.
+    - Le mois de début de la validation est tiré au sort parmi [Mars, Avril, Mai, Juin] de l'année de validation.
+    - L'entraînement est étendu pour inclure toutes les données jusqu'à la veille du début de la validation.
     """
     random.seed(random_state)
     final_splits = []
