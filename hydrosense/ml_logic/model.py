@@ -61,7 +61,7 @@ def optimize_model(
     y: np.ndarray,
     X_train_df_for_folds: Optional[pd.DataFrame] = None, # Le DataFrame complet pour les folds
     # date_column_name: str = 'date_mesure', # Plus nécessaire car get_folds prend un DatetimeIndex
-    n_splits_cv: int = 3, # Nombre de splits pour la CV
+    n_splits_cv: int = 3, # Nombre de splits pour la CV (par défaut 3)
     min_train_years: int = 3 # Nombre minimum d'années pour le premier jeu d'entraînement
 ) -> Tuple[XGBRegressor, dict]:
     """
@@ -97,6 +97,7 @@ def optimize_model(
             dates_series=X_train_df_for_folds.index,
             n_splits=n_splits_cv,
             min_train_years=min_train_years
+            # val_months_duration est maintenant géré par sa valeur par défaut dans get_folds (3 mois)
         )
     else:
         # Fallback au TimeSeriesSplit standard si les dates ne sont pas fournies

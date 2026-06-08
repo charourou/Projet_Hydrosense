@@ -6,11 +6,8 @@ from typing import List, Tuple
 def get_folds(dates_series: pd.DatetimeIndex, n_splits: int = 5, min_train_years: int = 3, val_months_duration: int = 3):
     """
     Orchestre la génération d'indices de train/validation pour une cross-validation temporelle
-    en utilisant une stratégie de fenêtre expansive annuelle. Le jeu d'entraînement commence toujours au début des données et s'étend
-    année après année. Le jeu de validation est l'année (ou les années)
-    immédiatement suivante(s) au jeu d'entraînement, avec un mois de début aléatoire.
 
-    Exemple avec min_train_years=3, val_years_duration=1:
+    Exemple avec min_train_years=3,
     Si les dates vont de 2010 à 2020 et n_splits=3:
     Split 1: Train: 2010-2015, val: 2016 (assuming enough data for 3 splits)
     Split 2: Train: 2010-2016, val: 2017
@@ -25,20 +22,17 @@ def get_folds(dates_series: pd.DatetimeIndex, n_splits: int = 5, min_train_years
                                    Le mois de début de la validation sera aléatoirement Mars, Avril ou Mai.
 
     Retourne:
-        Une liste de tuples (train_indices, val_indices) utilisable dans un GridSearchCV,
-        où les indices sont les positions entières des lignes correspondant à `dates_series`.
-
+        Une liste de tuples (train_idx, val_idx) utilisable dans un GridSearchCV,
     """
+
     if not isinstance(dates_series, pd.DatetimeIndex):
         raise ValueError("dates_series doit être un pd.DatetimeIndex.")
-
-    # Assurer que les dates sont triées
     dates_series = dates_series.sort_values()
 
-    # 1. Obtenir les partitions annuelles (listes d'années de train, année de val)
+    # Obtenir les partitions annuelles (listes d'années de train, année de val)
     yearly_splits = split_years(dates_series, n_splits, min_train_years)
-
-    # 2. Affiner ces partitions en indices mensuels avec un début de validation aléatoire
+    # Et les affiner en fonctios du nb de mois
+    # TODO gerer le cas où la donnée est hebdomadaire et non mensuelle
     final_splits = refine_split(dates_series, yearly_splits, val_months_duration, random_state=42)
 
     return final_splits
@@ -46,7 +40,7 @@ def get_folds(dates_series: pd.DatetimeIndex, n_splits: int = 5, min_train_years
 
 def split_years(dates_series: pd.DatetimeIndex, n_splits: int, min_train_years: int) -> List[Tuple[List[int], int]]:
     """
-    sous fonction de get_folds pour trouver les années de train et les années de validation pour chaque fold
+    Une sous-fonction de get_folds pour trouver les années de train et les années de validation pour chaque fold
     """
     years = dates_series.year
     unique_years = np.sort(years.unique())
@@ -93,7 +87,7 @@ def refine_split(
     """
     random.seed(random_state)
     final_splits = []
-    possible_val_start_months = [3, 4, 5] # Mars, Avril, Mai
+    possible_val_start_months = [3, 4, 5, 6] # Mars, Avril, Mai, juin
 
     for train_years, val_year in yearly_splits:
         val_start_month = random.choice(possible_val_start_months)
@@ -117,8 +111,10 @@ def refine_split(
 
     return final_splits
 
+
+
 # ================================================================
-# TEST
+# TESTS
 # ================================================================
 
 if __name__ == "__main__":

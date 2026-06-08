@@ -218,18 +218,18 @@ if __name__ == "__main__":
             dates_series=X_train_df.index,
             n_splits=3, # Nombre de splits à visualiser
             min_train_years=3,
-            val_years_duration=1
+            val_months_duration=3
         )
         for i, (train_idx, val_idx) in enumerate(test_splits):
             # Utilise X_train_df pour récupérer les dates réelles pour la visualisation
-            train_years = X_train_df.iloc[train_idx].index.year.unique()
-            val_years = X_train_df.iloc[val_idx].index.year.unique()
+            train_period = X_train_df.iloc[train_idx].index
+            val_period = X_train_df.iloc[val_idx].index
             print(f"  Split {i+1}:")
-            print(f"    Train years: {min(train_years)}-{max(train_years)} ({len(train_idx)} samples)")
-            print(f"    Val years:   {min(val_years)}-{max(val_years)} ({len(val_idx)} samples)")
+            print(f"    Train: {train_period.min().strftime('%Y-%m')} à {train_period.max().strftime('%Y-%m')} ({len(train_idx)} samples)")
+            print(f"    Val:   {val_period.min().strftime('%Y-%m')} à {val_period.max().strftime('%Y-%m')} ({len(val_idx)} samples)")
             # Assertions pour vérifier l'absence de fuite temporelle et l'ordre chronologique
-            assert max(train_years) < min(val_years), f"Fuite temporelle détectée dans Split {i+1}!"
-            assert max(train_idx) < min(val_idx), f"Indices non chronologiques ou chevauchement détecté dans Split {i+1}!"
+            assert train_period.max() < val_period.min(), f"Fuite temporelle détectée dans Split {i+1}!" # Vérifie l'ordre chronologique
+            assert len(val_period) == 3, f"La durée de validation n'est pas respectée. dans Split {i+1}!" # Vérifie le nombre exact de mois
     except ValueError as e:
         print(f"  Erreur lors de la visualisation des splits: {e}")
     print(Fore.CYAN + "--- Fin de la visualisation des splits ---" + Style.RESET_ALL)
