@@ -2,13 +2,11 @@ import os, glob, re
 import pandas as pd
 from google.cloud import bigquery
 from google.api_core.exceptions import Conflict
+from hydrosense.params import *
+
 
 # --- CONFIGURATION ---
 LOCAL_DATA_DIR = "/home/charourou/projects/Projet_Hydrosense/raw_data/"
-
-# TODO - > mettre un fichier params.py en place
-PROJECT_ID = os.environ.get("GCP_PROJECT_ID")
-DATASET_ID = os.environ.get("BQ_DATASET_ID")
 TABLE_ID = "chroniques_piezo"
 TEMP_PARQUET_FILE = "all_chroniques.parquet"
 
@@ -16,7 +14,7 @@ TEMP_PARQUET_FILE = "all_chroniques.parquet"
 STATIONS_AUTORISEES = []
 
 client = bigquery.Client(project=PROJECT_ID)
-table_ref = f"{PROJECT_ID}.{DATASET_ID}.{TABLE_ID}"
+table_ref = f"{GCP_PROJECT_ID}.{BQ_DATASET_ID}.{TABLE_ID}"
 
 schema = [
         bigquery.SchemaField("bss_id", "STRING", mode="REQUIRED"),
