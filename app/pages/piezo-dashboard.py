@@ -3,11 +3,6 @@ pages/piezo-dashboard.py
 ────────────────────────
 Dashboard principal : historique + prévision XGBoost + seuils de gestion.
 
-Refactorisation v5 :
-- Bloc <style> supprimé → CSS injecté une fois dans main.py via apply_global_css()
-- Couleurs des seuils importées depuis utils/theme.py (SEUIL_COLORS, SEUIL_ORDER)
-- Aucune couleur hardcodée dans ce fichier
-- Helpers _build_seuils_df() et _render_seuils_card() extraits pour lisibilité
 """
 
 import altair as alt

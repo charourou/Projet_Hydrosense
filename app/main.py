@@ -3,10 +3,6 @@ app/main.py
 ───────────
 Point d'entrée de l'application Hydro-Sense.
 
-Bonnes pratiques :
-- st.set_page_config() en premier (obligatoire)
-- CSS global injecté ici une seule fois via apply_global_css()
-  → les pages n'ont plus besoin de leur propre bloc <style>
 """
 
 import streamlit as st

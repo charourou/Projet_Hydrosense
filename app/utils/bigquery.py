@@ -3,11 +3,6 @@ utils/bigquery.py
 ─────────────────
 Fonctions d'accès BigQuery pour l'app Hydro-Sense.
 
-Bonnes pratiques appliquées :
-- Client BQ instancié une seule fois au niveau module (pas dans chaque fn)
-- Colonnes percentile centralisées dans PERCENTILE_COLS
-- Toutes les fonctions retournent un type annoté
-- @st.cache_data sur toutes les fonctions de lecture
 """
 
 import os

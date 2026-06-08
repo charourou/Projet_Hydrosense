@@ -1,12 +1,7 @@
 """
 utils/theme.py
 ──────────────
-Source unique de vérité pour les couleurs, tokens de design, et le CSS global
-de l'application Hydro-Sense.
 
-Principe : aucune couleur hardcodée hors de ce fichier.
-Les composants importent SEUIL_COLORS et DESIGN_TOKENS, ils ne définissent
-pas leurs propres valeurs.
 """
 
 # ── Palette des seuils de gestion ────────────────────────────────────────────
