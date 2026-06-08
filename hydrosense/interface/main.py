@@ -9,6 +9,9 @@ from hydrosense.ml_logic.folding import get_folds
 
 from hydrosense.database.bigquery import load_piezo_bq
 from hydrosense.preprocess.cleaning import clean_piezo
+from hydrosense.preprocess.preprocessor import preprocess_week
+
+from hydrosense import params
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PARAMS
@@ -19,7 +22,7 @@ DATA_CODE_PIEZO = "BSS001QHYH"
 TARGET_COL   = "niveau_nappe_eau"
 DATE_COL     = "date_mesure"
 
-# a revoir
+# A revoir
 FEATURE_COLS = ["mois", "lag_1", "lag_2", "lag_3", "lag_12", "moyenne_3m", "moyenne_6m"]
 
 # Split : 3 derniers mois en test (Mars → Mai 2026)
@@ -72,18 +75,17 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     print(Fore.MAGENTA + "\n⭐️ Use case: preprocess" + Style.RESET_ALL)
 
     # Rééchantillonnage mensuel — 'ME' = Month End (pandas >= 2.2)
-    # y_mensuel = df[TARGET_COL].resample("ME").mean()
-    y_mensuel = df.resample("ME", on="date_mesure")[TARGET_COL].mean()
+    y_mensuel = df[params.TARGET_COL].resample("ME").mean()
 
     # Feature engineering
     df_ml = pd.DataFrame(y_mensuel)
     df_ml["mois"]       = df_ml.index.month
-    df_ml["lag_1"]      = df_ml[TARGET_COL].shift(1)
-    df_ml["lag_2"]      = df_ml[TARGET_COL].shift(2)
-    df_ml["lag_3"]      = df_ml[TARGET_COL].shift(3)
-    df_ml["lag_12"]     = df_ml[TARGET_COL].shift(12)
-    df_ml["moyenne_3m"] = df_ml[TARGET_COL].rolling(window=3).mean()
-    df_ml["moyenne_6m"] = df_ml[TARGET_COL].rolling(window=6).mean()
+    df_ml["lag_1"]      = df_ml[params.TARGET_COL].shift(1)
+    df_ml["lag_2"]      = df_ml[params.TARGET_COL].shift(2)
+    df_ml["lag_3"]      = df_ml[params.TARGET_COL].shift(3)
+    df_ml["lag_12"]     = df_ml[params.TARGET_COL].shift(12)
+    df_ml["moyenne_3m"] = df_ml[params.TARGET_COL].rolling(window=3).mean()
+    df_ml["moyenne_6m"] = df_ml[params.TARGET_COL].rolling(window=6).mean()
     df_ml = df_ml.dropna()
 
     print(f"✅ preprocess() done — {len(df_ml)} mois | {df_ml.shape[1]} colonnes\n")
@@ -102,7 +104,7 @@ def split_data(df_ml: pd.DataFrame):
     print(Fore.MAGENTA + "\n⭐️ Use case: split_data" + Style.RESET_ALL)
 
     X = df_ml[FEATURE_COLS]
-    y = df_ml[TARGET_COL]
+    y = df_ml[params.TARGET_COL]
 
     X_train_df = X.loc[:TRAIN_END]
     X_test_df  = X.loc[TEST_START:TEST_END]
@@ -172,27 +174,31 @@ def evaluate(model, X_test, y_test) -> dict:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 6. PREDICT — prévision 3 mois futurs (pour Streamlit)
+# 6. PREDICT — prévision 13 prochaines semaines
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 def pred(model, df_ml: pd.DataFrame) -> pd.Series:
     """
-    Génère les prévisions sur les 3 prochains mois.
-    Utilisé par Streamlit (app/main.py) pour afficher les prévisions futures.
-
-    Returns
-    -------
-    pd.Series avec 3 valeurs prédites et leurs dates (index DatetimeIndex)
+    Génère les prévisions sur toute la période de test (Mars → Mai 2026),
+    soit environ 12 à 13 semaines selon le calendrier.
     """
     print(Fore.MAGENTA + "\n⭐️ Use case: pred" + Style.RESET_ALL)
 
-    X_future       = df_ml[FEATURE_COLS].tail(3).values
-    y_pred         = predict_model(model, X_future)
-    last_date      = df_ml.index[-1]
-    forecast_index = pd.date_range(start=last_date, periods=4, freq="ME")[1:]
-    forecast       = pd.Series(y_pred, index=forecast_index, name=TARGET_COL)
+    # 1. On filtre df_ml pour ne garder QUE la période cible (Mars à Mai 2026)
+    # C'est exactement les mêmes dates que ton X_test
+    df_futur = df_ml.loc[params.EVALUATION_START_DATE:TEST_END]
 
-    print(f"\n✅ pred() done:\n{forecast.to_string()}\n")
+    # 2. On extrait les features matricielles (X) pour cette période
+    X_future = df_futur[FEATURE_COLS].values
+
+    # 3. XGBoost génère autant de prédictions qu'il y a de lignes (12 ou 13)
+    y_pred = predict_model(model, X_future)
+
+    # 4. On crée la Series Pandas en utilisant directement l'index temporel réel de cette période
+    forecast = pd.Series(y_pred, index=df_futur.index, name=params.TARGET_COL)
+
+    print(f"\n✅ pred() done — Predicted {len(forecast)} weeks:\n{forecast.to_string()}\n")
     return forecast
 
 
@@ -207,7 +213,7 @@ if __name__ == "__main__":
     # load from big query
     df = clean_piezo(load_piezo_bq(DATA_CODE_PIEZO))
 
-    df_ml = preprocess(df)
+    df_ml = preprocess(df)  # OR preprocess_week ???
     X_train_df, X_test_df, y_train_df, y_test_df = split_data(df_ml)
 
     # --- Zone de test pour visualiser les splits de cross-validation ---
