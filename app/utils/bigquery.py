@@ -1,158 +1,139 @@
+"""
+utils/bigquery.py
+─────────────────
+Fonctions d'accès BigQuery pour l'app Hydro-Sense.
+
+"""
+
 import os
+
+import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
 from google.cloud import bigquery
 
-load_dotenv()
+load_dotenv(override=True)
 
 GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID")
-DATASET = os.getenv("BQ_DATASET_ID")
+DATASET        = os.getenv("BQ_DATASET_ID")
 
-client = bigquery.Client(project=GCP_PROJECT_ID)
+# ── Client unique partagé ─────────────────────────────────────────────────────
+_client = bigquery.Client(project=GCP_PROJECT_ID)
+
+# ── Noms de colonnes percentile — source unique de vérité ────────────────────
+PERCENTILE_COLS = {
+    "p95": "p95_global",
+    "p85": "p85_global",
+    "p20": "p20_global",
+    "p10": "p10_global",
+    "p5":  "p5_global",
+}
+
+
+def _table(name: str) -> str:
+    """Retourne le chemin complet d'une table BQ."""
+    return f"`{GCP_PROJECT_ID}.{DATASET}.{name}`"
+
+
+# ── Catalogue ─────────────────────────────────────────────────────────────────
+
+@st.cache_data
+def load_catalog() -> pd.DataFrame:
+    query = f"SELECT * FROM {_table('cat_piezo_raw')}"
+    return _client.query(query).to_dataframe()
 
 
 @st.cache_data
-def load_catalog():
-    client = bigquery.Client(project=GCP_PROJECT_ID)
-    query = f"""
-        SELECT *
-        FROM `{GCP_PROJECT_ID}.{DATASET}.cat_piezo_raw`
-    """
-    return client.query(query).to_dataframe()
-
-
-@st.cache_data
-def load_catalog_map():
-    client = bigquery.Client(project=GCP_PROJECT_ID)
+def load_catalog_map() -> pd.DataFrame:
     query = f"""
         SELECT bss_id, nom_commune, nom_departement, x, y
-        FROM `{GCP_PROJECT_ID}.{DATASET}.cat_piezo_raw`
+        FROM {_table('cat_piezo_raw')}
         WHERE x IS NOT NULL AND y IS NOT NULL
     """
-    return client.query(query).to_dataframe()
+    return _client.query(query).to_dataframe()
 
 
 @st.cache_data
-def load_single_piezo_map(bss_id: str):
-    """
-    Charge les coordonnées et infos d'un seul piézomètre via son bss_id.
-    """
-    client = bigquery.Client(project=GCP_PROJECT_ID)
-    query = f"""
-        SELECT bss_id, nom_commune, nom_departement, x, y
-        FROM `{GCP_PROJECT_ID}.{DATASET}.cat_piezo_raw`
-        WHERE bss_id = @bss_id
-          AND x IS NOT NULL
-          AND y IS NOT NULL
-        LIMIT 1
-    """
-    job_config = bigquery.QueryJobConfig(
-        query_parameters=[
-            bigquery.ScalarQueryParameter("bss_id", "STRING", bss_id)
-        ]
-    )
-    return client.query(query, job_config=job_config).to_dataframe()
-
-
-@st.cache_data
-def load_catalog_interm():
+def load_catalog_interm() -> pd.DataFrame:
     """
     Charge la liste des piézomètres depuis cat_piezo_interm
     pour alimenter le sélecteur de l'interface.
-    Retourne bss_id, nom_commune, code_departement.
     """
-    client = bigquery.Client(project=GCP_PROJECT_ID)
     query = f"""
         SELECT bss_id, nom_commune, code_departement
-        FROM `{GCP_PROJECT_ID}.{DATASET}.cat_piezo_interm`
+        FROM {_table('cat_piezo_interm')}
         WHERE bss_id IS NOT NULL
         ORDER BY code_departement, nom_commune
     """
-    return client.query(query).to_dataframe()
+    return _client.query(query).to_dataframe()
 
+
+@st.cache_data
+def load_single_piezo_map(bss_id: str) -> pd.DataFrame:
+    """Coordonnées et infos d'un seul piézomètre."""
+    query = f"""
+        SELECT bss_id, nom_commune, nom_departement, x, y
+        FROM {_table('cat_piezo_raw')}
+        WHERE bss_id = @bss_id
+          AND x IS NOT NULL AND y IS NOT NULL
+        LIMIT 1
+    """
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[bigquery.ScalarQueryParameter("bss_id", "STRING", bss_id)]
+    )
+    return _client.query(query, job_config=job_config).to_dataframe()
+
+
+# ── Seuils ────────────────────────────────────────────────────────────────────
 
 @st.cache_data
 def load_seuils_interm(bss_id: str) -> dict | None:
     """
-    Charge les seuils percentiles depuis cat_piezo_interm
-    en attendant les seuils réglementaires définitifs.
-
-    Correspondance provisoire :
-        Normal       → p85
-        Surveillance → p50
-        Alerte       → p20
-        Crise        → p10
+    Charge les seuils percentiles depuis cat_piezo_interm.
 
     Retourne None si le piézomètre est introuvable ou si
-    les valeurs percentiles sont toutes nulles.
+    l'une des valeurs percentile est nulle (déclenche le fallback côté UI).
     """
-    client = bigquery.Client(project=GCP_PROJECT_ID)
+    cols_sql = ", ".join(PERCENTILE_COLS.values())
     query = f"""
-        SELECT p95_global, p85_global, p20_global, p10_global, p5_global
-        FROM `{GCP_PROJECT_ID}.{DATASET}.cat_piezo_interm`
+        SELECT {cols_sql}
+        FROM {_table('cat_piezo_interm')}
         WHERE bss_id = @bss_id
         LIMIT 1
     """
     job_config = bigquery.QueryJobConfig(
-        query_parameters=[
-            bigquery.ScalarQueryParameter("bss_id", "STRING", bss_id)
-        ]
+        query_parameters=[bigquery.ScalarQueryParameter("bss_id", "STRING", bss_id)]
     )
-    df = client.query(query, job_config=job_config).to_dataframe()
+    df = _client.query(query, job_config=job_config).to_dataframe()
 
     if df.empty:
         return None
 
     row = df.iloc[0]
-
-    # Si l'une des valeurs est nulle, on ne peut pas construire les seuils
-    if row[["p95_global", "p85_global", "p20_global", "p10_global", "p5_global"]].isnull().any():
+    if row[list(PERCENTILE_COLS.values())].isnull().any():
         return None
 
-    return {
-        "p95": float(row["p95_global"]),
-        "p85": float(row["p85_global"]),
-        "p20": float(row["p20_global"]),
-        "p10": float(row["p10_global"]),
-        "p5":  float(row["p5_global"]),
-    }
+    # Remapper les noms de colonnes BQ vers les clés courtes (p95, p85, …)
+    return {key: float(row[col]) for key, col in PERCENTILE_COLS.items()}
 
 
 @st.cache_data
 def load_seuils(bss_id: str) -> dict | None:
     """
-    Charge les 4 seuils réglementaires pour un piézomètre donné
-    depuis la table chroniques_piezo.
+    Charge les 4 seuils réglementaires depuis chroniques_piezo.
 
-    Colonnes attendues dans la table :
-        seuil_vigilance, seuil_alerte, seuil_alerte_renforcee, seuil_crise
-
-    Retourne un dict :
-        {
-            "vigilance":        float,
-            "alerte":           float,
-            "alerte_renforcee": float,
-            "crise":            float,
-        }
-    ou None si le bss_id n'est pas trouvé.
+    Retourne None si le bss_id n'est pas trouvé.
     """
-    client = bigquery.Client(project=GCP_PROJECT_ID)
     query = f"""
-        SELECT
-            seuil_vigilance,
-            seuil_alerte,
-            seuil_alerte_renforcee,
-            seuil_crise
-        FROM `{GCP_PROJECT_ID}.{DATASET}.chroniques_piezo`
+        SELECT seuil_vigilance, seuil_alerte, seuil_alerte_renforcee, seuil_crise
+        FROM {_table('chroniques_piezo')}
         WHERE bss_id = @bss_id
         LIMIT 1
     """
     job_config = bigquery.QueryJobConfig(
-        query_parameters=[
-            bigquery.ScalarQueryParameter("bss_id", "STRING", bss_id)
-        ]
+        query_parameters=[bigquery.ScalarQueryParameter("bss_id", "STRING", bss_id)]
     )
-    df = client.query(query, job_config=job_config).to_dataframe()
+    df = _client.query(query, job_config=job_config).to_dataframe()
 
     if df.empty:
         return None
