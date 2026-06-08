@@ -3,6 +3,11 @@ utils/bigquery.py
 ─────────────────
 Fonctions d'accès BigQuery pour l'app Hydro-Sense.
 
+Bonnes pratiques appliquées :
+- Client BQ instancié une seule fois au niveau module (pas dans chaque fn)
+- Colonnes percentile centralisées dans PERCENTILE_COLS
+- Toutes les fonctions retournent un type annoté
+- @st.cache_data sur toutes les fonctions de lecture
 """
 
 import os
@@ -145,3 +150,48 @@ def load_seuils(bss_id: str) -> dict | None:
         "alerte_renforcee": float(row["seuil_alerte_renforcee"]),
         "crise":            float(row["seuil_crise"]),
     }
+
+
+@st.cache_data
+def load_catalog_map_dept(code_departement: str = "79") -> pd.DataFrame:
+    """
+    Charge les piézomètres d'un département depuis cat_piezo_interm + cat_piezo_raw
+    en UNE SEULE requête BQ (coordonnées + seuils percentiles).
+
+    Retourne un DataFrame avec colonnes :
+        bss_id, nom_commune, code_departement, x, y,
+        p95_global, p85_global, p20_global, p10_global, p5_global
+    """
+    cols_sql = ", ".join(f"i.{c}" for c in PERCENTILE_COLS.values())
+    query = f"""
+        SELECT
+            i.bss_id,
+            i.nom_commune,
+            i.code_departement,
+            r.x,
+            r.y,
+            {cols_sql}
+        FROM {_table('cat_piezo_interm')} i
+        JOIN {_table('cat_piezo_raw')} r USING (bss_id)
+        WHERE i.code_departement = @dept
+          AND r.x IS NOT NULL
+          AND r.y IS NOT NULL
+    """
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[
+            bigquery.ScalarQueryParameter("dept", "STRING", code_departement)
+        ]
+    )
+    return _client.query(query, job_config=job_config).to_dataframe()
+
+
+def seuils_from_row(row: pd.Series) -> dict | None:
+    """
+    Extrait un dict {p5, p10, p20, p85, p95} depuis une ligne
+    du DataFrame retourné par load_catalog_map_dept().
+    Retourne None si l'une des valeurs percentile est nulle.
+    """
+    cols = list(PERCENTILE_COLS.values())
+    if row[cols].isnull().any():
+        return None
+    return {key: float(row[col]) for key, col in PERCENTILE_COLS.items()}
