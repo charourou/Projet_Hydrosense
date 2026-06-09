@@ -1,64 +1,102 @@
-import math
 import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
 
 SIGMA = 4.903e-9 # Constante de Stefan-Boltzmann
 
 
-def estimer_precip_utile(P_mm, T_moy_C, vent_m_s, lat_deg, altitude_m, jour_annee, humidite_relative=60.0):
-    """
-    Estime la Précipitation Utile (PU) quotidienne en utilisant une version
-    simplifiée de l'équation de Penman-Monteith (FAO-56).
+def estim_PU(P_mm, T_moy_C, vent_m_s, lat_deg, altitude_m, jour_annee, humidite_relative=60.0):
+    """Version vectorisée de Penman-Monteith"""
 
-    Paramètres :
-    - P_mm : Précipitation du jour (mm)
-    - T_moy_C : Température moyenne du jour (°C)
-    - vent_m_s : Vitesse du vent à 2m de hauteur (m/s)
-    - lat_deg : Latitude du piézomètre (degrés décimaux)
-    - altitude_m : Altitude du piézomètre (mètres)
-    - jour_annee : Jour de l'année (1 à 365/366)
-    - humidite_relative : Humidité relative moyenne (%) - estimée à 60% par défaut en France.
+    altitude_m = np.clip(altitude_m, 0, 1000) # précaution
 
-    Retourne : un dictionnaire avec ET0 (mm) et PU (mm)
-    """
-
-    # 1. Constantes et pression atmosphérique
     P_atm = 101.3 * ((293 - 0.0065 * altitude_m) / 293) ** 5.26
-    gamma = 0.000665 * P_atm  # Constante psychrométrique (kPa/°C)
+    gamma = 0.000665 * P_atm
 
-    # 2. Pressions de vapeur (kPa) et pente de la courbe (delta)
-    e_s = 0.6108 * math.exp(17.27 * T_moy_C / (T_moy_C + 237.3)) # Pression saturante
-    e_a = e_s * (humidite_relative / 100.0)                      # Pression réelle
-    delta = (4098 * e_s) / ((T_moy_C + 237.3) ** 2)              # Pente
+    e_s = 0.6108 * np.exp(17.27 * T_moy_C / (T_moy_C + 237.3))
+    e_a = e_s * (humidite_relative / 100.0)
+    delta = (4098 * e_s) / ((T_moy_C + 237.3) ** 2)
 
-    # 3. Rayonnement astronomique (Ra) basé sur la latitude et la date
-    lat_rad = math.radians(lat_deg)
-    dr = 1 + 0.033 * math.cos(2 * math.pi * jour_annee / 365)
-    declinaison_sol = 0.409 * math.sin(2 * math.pi * jour_annee / 365 - 1.39)
-    omega_s = math.acos(max(-1.0, min(1.0, -math.tan(lat_rad) * math.tan(declinaison_sol))))
+    lat_rad = np.radians(lat_deg)
+    dr = 1 + 0.033 * np.cos(2 * np.pi * jour_annee / 365)
+    declinaison_sol = 0.409 * np.sin(2 * np.pi * jour_annee / 365 - 1.39)
 
-    Ra = (24 * 60 / math.pi) * 0.0820 * dr * (
-        omega_s * math.sin(lat_rad) * math.sin(declinaison_sol) +
-        math.cos(lat_rad) * math.cos(declinaison_sol) * math.sin(omega_s)
+
+    x = np.clip(-np.tan(lat_rad) * np.tan(declinaison_sol), -1.0, 1.0)
+    omega_s = np.arccos(x)
+
+    Ra = (24 * 60 / np.pi) * 0.0820 * dr * (
+        omega_s * np.sin(lat_rad) * np.sin(declinaison_sol) +
+        np.cos(lat_rad) * np.cos(declinaison_sol) * np.sin(omega_s)
     )
 
-    # 4. Rayonnement net (Rn) - Approximations FAO pour ciel moyen
-    # Rs (Rayonnement global) estimé grossièrement à 50% du rayonnement max (Ra)
     Rs = 0.50 * Ra
-    Rns = (1 - 0.23) * Rs # Albedo de 0.23 pour une culture de référence (herbe)
-
-
-    Rnl = SIGMA * ((T_moy_C + 273.16)**4) * (0.34 - 0.14 * math.sqrt(e_a)) * (1.35 * (Rs / (0.75 * Ra)) - 0.35)
+    Rns = (1 - 0.23) * Rs
+    Rnl = SIGMA * ((T_moy_C + 273.16)**4) * (0.34 - 0.14 * np.sqrt(e_a)) * (1.35 * (Rs / (0.75 * Ra)) - 0.35)
     Rn = Rns - Rnl
 
-    # Équation finale de Penman-Monteith
     terme_radiatif = 0.408 * delta * Rn
     terme_advectif = gamma * (900 / (T_moy_C + 273.16)) * vent_m_s * (e_s - e_a)
     denominateur = delta + gamma * (1 + 0.34 * vent_m_s)
 
-    ET0 = max(0, (terme_radiatif + terme_advectif) / denominateur)
+    eto = (terme_radiatif + terme_advectif) / denominateur
+    eto = np.maximum(0, eto) # Remplace le max() pour garder la valeur >= 0
 
-    # Bilan hydrique : Précipitation utile
+    return np.round(P_mm - eto, 3)
 
-    PU = P_mm - ET0
 
-    return round(PU, 3)
+
+
+def lag_pluie(df: pd.DataFrame, col_pluie: str = 'PU_synth', col_nappe: str = 'niveau_nappe_eau',
+                           max_lag: int = 120,
+                           toggle_plot: bool = False
+                           ) -> int:
+    """
+    Calcule la corrélation croisée entre un signal météo et un niveau de nappe
+    pour estimer le temps de réponse (inertie) de l'aquifère.
+
+    Retourne :
+        int : Le décalage (en jours) maximisant la corrélation.
+    """
+
+    # 1. Préparation des données (sécurité contre les NaN)
+    df_corr = df[[col_pluie, col_nappe]].dropna().copy()
+
+    if df_corr.empty:
+        print("❌ Erreur : Le DataFrame est vide après suppression des NaN.")
+        return 0
+
+    lags = range(0, max_lag + 1)
+    corr_values = []
+
+    # Calcul des corrélations décalées
+    for lag in lags:
+        corr = df_corr[col_pluie].corr(df_corr[col_nappe].shift(-lag))
+        corr_values.append(corr)
+
+    # Identification du meilleur lag
+    best_idx = np.argmax(corr_values)
+    best_lag = lags[best_idx]
+    best_corr = corr_values[best_idx]
+
+    if toggle_plot:
+    # 4. Visualisation
+        plt.figure(figsize=(10, 5))
+        plt.plot(lags, corr_values, marker='o', color='teal', markersize=4, label='Corrélation de Pearson')
+        plt.plot(best_lag, best_corr, marker='*', color='red', markersize=12, label=f'Max: {best_lag} jours')
+
+        plt.axhline(0, color='black', linestyle='--', linewidth=1)
+        plt.title(f"Temps de réponse de la nappe : {col_pluie} vs {col_nappe}")
+        plt.xlabel("Décalage (Jours)")
+        plt.ylabel("Coefficient de Corrélation")
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        plt.show()
+
+    print(f"✅ Le temps de réponse optimal estimé de la nappe est de {best_lag} jours (Corrélation: {best_corr:.3f}).")
+
+    return best_lag, best_corr
+
+# --- Exemple d'utilisation ---
+# temps_reponse = calculer_temps_reponse(df, col_pluie='PU_synth', col_nappe='niveau_nappe_eau', max_lag=90)
