@@ -15,11 +15,12 @@ print(f"\n✅ XGBoost loaded ({round(end - start, 2)}s)")
 
 
 def initialize_model(
-    n_estimators: int = 300,
-    learning_rate: float = 0.05,
-    max_depth: int = 5,
+    n_estimators: int = 1000,
+    learning_rate: float = 0.1,
+    max_depth: int = 2,
     subsample: float = 0.8,
-    colsample_bytree: float = 0.8,
+    colsample_bytree: float = 0.6,
+    min_child_weight=5,
     random_state: int = 42
 ) -> XGBRegressor:
     """
@@ -44,6 +45,7 @@ def initialize_model(
         max_depth=max_depth,
         subsample=subsample,
         colsample_bytree=colsample_bytree,
+        min_child_weight = min_child_weight,
         objective="reg:squarederror",   # régression → MSE comme loss
         random_state=random_state,
         n_jobs=-1,                       # utilise tous les cœurs CPU
@@ -77,10 +79,13 @@ def optimize_model(
     param_grid = {
         "n_estimators":     [100, 300, 500],
         "learning_rate":    [0.01, 0.05, 0.1],
-        "max_depth":        [3, 5, 7],
-        "subsample":        [0.7, 0.9],
-        "colsample_bytree": [0.8, 1.0]
+        "max_depth":        [2, 3, 4],
+        "subsample":        [0.6, 0.7, 0.8],
+        "colsample_bytree": [0.5, 0.6, 0.7],
+        # 💡 ON AJOUTE LE POIDS MINIMUM PAR FEUILLE (crucial pour le bruit hebdo)
+         "min_child_weight": [3, 5, 10]
     }
+
 
     grid_search = GridSearchCV(
         estimator=XGBRegressor(objective="reg:squarederror", random_state=42, n_jobs=-1, verbosity=0),
