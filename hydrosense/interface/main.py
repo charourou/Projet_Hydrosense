@@ -11,11 +11,12 @@ from hydrosense.ml_logic.model import initialize_model, optimize_model, train_mo
 from hydrosense.ml_logic.folding import get_folds
 
 from hydrosense.database.bigquery import load_piezo_bq
-from hydrosense.preprocess.cleaning import clean_piezo
+from hydrosense.preprocess.cleaning import clean_piezo, clean_piezo2
 from hydrosense.preprocess.preprocessor import preprocess_week
 
 
 from hydrosense import params
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  TODO : GERER PARAMS
@@ -27,11 +28,16 @@ DATA_PATH    = Path("data/piezo_bourdet_clean.csv")
 DATA_CODE_PIEZO = "BSS001QHYH"
 TARGET_COL   = "niveau_nappe_eau"
 DATE_COL     = "date_mesure"
+#FEATURE_COLS = ["mois", "lag_1", "lag_2", "lag_3", "lag_12", "moyenne_3m", "moyenne_6m"]
+#FEATURE_COLS = ["semaine", "lag_1", "lag_2", "lag_3", "lag_12", "moyenne_3m", "moyenne_6m"]
+#FEATURE_COLS = ["semaine", "lag_1", "lag_2", "lag_3","lag_4" ,"lag_52", "moyenne_3w", "moyenne_6w","RR_lag_1","RR_lag_2","RR_moy_4w"]
+FEATURE_COLS = ["semaine_sin","semaine_cos", "lag_1", "lag_2", "lag_3","lag_4" ,"lag_52", "moyenne_3w", "moyenne_6w","RR_synth"]
+#FEATURE_COLS = ["semaine_sin","semaine_cos", "lag_1","lag_4" ,"lag_52", "moyenne_3w", "moyenne_6w","RR_lag_1","RR_lag_2","RR_moy_4w"]
 
 # A revoir
-FEATURE_COLS = ["mois", "mois_sin", "mois_cos", "semaine",
-                "lag_1", "lag_2", "lag_3", "lag_12",
-                "moyenne_3m", "moyenne_6m"]
+# FEATURE_COLS = ["mois", "mois_sin", "mois_cos", "semaine",
+#                 "lag_1", "lag_2", "lag_3", "lag_12",
+#                 "moyenne_3m", "moyenne_6m"]
 
 # Split : 3 derniers mois en test (Mars → Mai 2026)
 # EN DUR --- OUILLE OUILLE
@@ -179,7 +185,8 @@ def train(X_train_df: pd.DataFrame, y_train_df: pd.Series, optimize: bool = True
         )
         print(Fore.BLUE + f"\nBest params: {best_params}" + Style.RESET_ALL)
     else:
-        model = initialize_model()
+        #on lui passe des hyperparametres de qualité
+        model = initialize_model(n_estimators= 1000,learning_rate= 0.1,max_depth=2,subsample=0.8,colsample_bytree =0.6, min_child_weight=5,random_state = 42)
 
     model, history = train_model(model, X_train_df.values, y_train_df.values)
 
@@ -311,7 +318,10 @@ def pred(model, df_ml: pd.DataFrame) -> pd.Series:
 if __name__ == "__main__":
 
     # 1. Données — une seule fois
-    df = clean_piezo(load_piezo_bq(DATA_CODE_PIEZO))
+    #df    = load_data() # du CSV
+    # load from big query
+    #df = clean_piezo(load_piezo_bq(DATA_CODE_PIEZO))
+    df = clean_piezo2(load_piezo_bq(DATA_CODE_PIEZO))
 
     if params.DATE_COL in df.columns:
         df[params.DATE_COL] = pd.to_datetime(df[params.DATE_COL])
