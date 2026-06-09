@@ -29,7 +29,9 @@ TARGET_COL   = "niveau_nappe_eau"
 DATE_COL     = "date_mesure"
 
 # A revoir
-FEATURE_COLS = ["mois", "lag_1", "lag_2", "lag_3", "lag_12", "moyenne_3m", "moyenne_6m"]
+FEATURE_COLS = ["mois", "mois_sin", "mois_cos", "semaine",
+                "lag_1", "lag_2", "lag_3", "lag_12",
+                "moyenne_3m", "moyenne_6m"]
 
 # Split : 3 derniers mois en test (Mars → Mai 2026)
 # EN DUR --- OUILLE OUILLE
@@ -86,11 +88,6 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     # Feature engineering
     df_ml = pd.DataFrame(y_mensuel)
 
-    # Cossiner les lignes suivantes
-    df_ml["mois"]       = df_ml.index.month
-    if False:
-        df_ml["mois_sin"] = np.sin(2 * np.pi * df_ml.index.month / 12)
-        df_ml["mois_cos"] = np.cos(2 * np.pi * df_ml.index.month / 12)
 
     df_ml["lag_1"]      = df_ml[params.TARGET_COL].shift(1)
     df_ml["lag_2"]      = df_ml[params.TARGET_COL].shift(2)
@@ -106,6 +103,26 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     print(f"✅ preprocess() done — {len(df_ml)} mois | {df_ml.shape[1]} colonnes\n")
     return df_ml
 
+def preprocess_slim(df: pd.DataFrame) -> pd.DataFrame:
+    y_mensuel = df[params.TARGET_COL].resample("ME").mean()
+
+    # Feature engineering
+    df_ml = pd.DataFrame(y_mensuel)
+
+    df_ml["mois_sin"] = np.sin(2 * np.pi * df_ml.index.month / 12)
+    df_ml["mois_cos"] = np.cos(2 * np.pi * df_ml.index.month / 12)
+
+    df_ml["lag_1"]      = df_ml[params.TARGET_COL].shift(1)
+    df_ml["lag_2"]      = df_ml[params.TARGET_COL].shift(2)
+    df_ml["lag_3"]      = df_ml[params.TARGET_COL].shift(3)
+    df_ml["lag_12"]     = df_ml[params.TARGET_COL].shift(12)
+
+
+    print(f"Preprocess SLIM done — {len(df_ml)} mois | {df_ml.shape[1]} colonnes\n")
+    return df_ml
+
+
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 3. TRAIN / TEST SPLIT
@@ -118,7 +135,9 @@ def split_data(df_ml: pd.DataFrame):
     """
     print(Fore.MAGENTA + "\n⭐️ Use case: split_data" + Style.RESET_ALL)
 
-    X = df_ml[FEATURE_COLS]
+    cols = [c for c in df_ml.columns if c in FEATURE_COLS]
+
+    X = df_ml[cols]
     y = df_ml[params.TARGET_COL]
 
     X_train_df = X.loc[:TRAIN_END]
@@ -350,7 +369,7 @@ if __name__ == "__main__":
     forecast = pred(model, df_ml)
 
 
-# probleme de dataleakage ??? 
+# probleme de dataleakage ???
 def pred_future(model, df_ml: pd.DataFrame, n_weeks: int = 13) -> pd.Series:
     """
     Génère les prévisions sur les n_weeks prochaines semaines (futur réel).
