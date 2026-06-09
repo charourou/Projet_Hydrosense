@@ -6,5 +6,9 @@ run:
 
 run_api:
 	uvicorn hydrosense.api.fast:app --reload
+
 train:
-		python hydrosense/interface/main.py
+	python hydrosense/interface/main.py
+
+run_all:
+	uvicorn hydrosense.api.fast:app --reload & streamlit run app/main.py

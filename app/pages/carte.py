@@ -2,7 +2,7 @@ import streamlit as st
 import folium
 import pandas as pd
 from streamlit_folium import st_folium
-from utils.bigquery import load_catalog_map
+from utils.api_client import load_catalog_map
 
 st.title("🗺️ Carte des piézomètres")
 

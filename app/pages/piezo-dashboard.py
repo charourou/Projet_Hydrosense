@@ -2,18 +2,16 @@
 pages/piezo-dashboard.py
 ────────────────────────
 Dashboard principal : historique + prévision XGBoost + seuils de gestion.
-
+Les prévisions sont chargées via l'API FastAPI (Cloud Run).
 """
 
+import requests
 import altair as alt
 import pandas as pd
 import streamlit as st
 
-from utils.bigquery import load_single_piezo_map, load_catalog_interm, load_seuils_interm
+from utils.api_client import load_single_piezo_map, load_catalog_interm, load_seuils_interm, load_historique, API_URL
 from utils.theme import SEUIL_COLORS, SEUIL_ORDER, DESIGN_TOKENS
-from hydrosense.database.bigquery import load_piezo_bq
-from hydrosense.preprocess.cleaning import clean_piezo
-from hydrosense.interface.main import train, preprocess, split_data, pred
 
 # ── Fallback seuils quand BQ ne retourne rien ────────────────────────────────
 _SEUILS_FALLBACK: dict[str, float] = {
@@ -56,19 +54,29 @@ with col_select:
 DATA_CODE_PIEZO = df_catalog.loc[df_catalog["label"] == selected_label, "bss_id"].iloc[0]
 
 # ══════════════════════════════════════════════════════════════════════════════
-# DATA & MODEL LOADING
+# CHARGEMENT HISTORIQUE + PRÉVISION API
 # ══════════════════════════════════════════════════════════════════════════════
-@st.cache_resource
-def get_trained_model_and_data(bss_id: str):
-    df_raw   = load_piezo_bq(bss_id)
-    df_clean = clean_piezo(df_raw)
-    df_ml    = preprocess(df_clean)
-    X_train, X_test, y_train, y_test = split_data(df_ml)
-    model_val, _ = train(X_train, y_train, optimize=False)
-    return model_val, df_clean, df_ml
 
-with st.spinner("Alignement du modèle XGBoost et chargement des données..."):
-    model_val, df_clean, df_ml = get_trained_model_and_data(DATA_CODE_PIEZO)
+@st.cache_data
+def get_historique(bss_id: str) -> pd.DataFrame:
+    return load_historique(bss_id)
+
+
+@st.cache_data
+def get_forecast(bss_id: str) -> dict:
+    response = requests.get(
+        f"{API_URL}/predict",
+        params={"bss_id": bss_id}
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+with st.spinner("Chargement des données historiques..."):
+    df_clean = get_historique(DATA_CODE_PIEZO)
+
+with st.spinner("Chargement de la prévision via l'API..."):
+    result = get_forecast(DATA_CODE_PIEZO)
 
 df_piezo_unique = load_single_piezo_map(DATA_CODE_PIEZO)
 
@@ -77,27 +85,26 @@ st.write("")
 # ══════════════════════════════════════════════════════════════════════════════
 # PRÉPARATION DES DONNÉES
 # ══════════════════════════════════════════════════════════════════════════════
-forecast_val_series = pred(model_val, df_ml)
-forecast_index_val  = pd.date_range(start="2026-03-01", periods=3, freq="ME")
 
-df_pred_val = pd.DataFrame({
-    "date_mesure":      forecast_index_val,
-    "niveau_nappe_eau": forecast_val_series.values,
-    "Type":             "Prédiction XGBoost (Test)",
-})
-
-df_hist = df_ml[["niveau_nappe_eau"]].reset_index()
+# Historique
+df_hist = df_clean.copy()
 df_hist["Type"] = "Historique Réel"
-
-deux_ans = pd.Timestamp("2026-05-31") - pd.Timedelta(days=365 * 2)
+deux_ans = pd.Timestamp.today() - pd.Timedelta(days=365 * 2)
 df_hist_filtre = df_hist[df_hist["date_mesure"] >= deux_ans]
+
+# Prévision depuis l'API
+df_pred_val = pd.DataFrame(result["prévision"])
+df_pred_val["date_mesure"]      = pd.to_datetime(df_pred_val["date"])
+df_pred_val["niveau_nappe_eau"] = df_pred_val["niveau"]
+df_pred_val["Type"]             = "Prédiction XGBoost"
+
 df_total = pd.concat([df_hist_filtre, df_pred_val], ignore_index=True)
 
 # ── Seuils ───────────────────────────────────────────────────────────────────
 _seuils: dict[str, float] = load_seuils_interm(DATA_CODE_PIEZO) or _SEUILS_FALLBACK
 
-x_min = pd.Timestamp("2026-05-31") - pd.Timedelta(days=180)
-x_max = pd.Timestamp("2026-05-31") + pd.Timedelta(days=95)
+x_min = df_hist_filtre["date_mesure"].max() - pd.Timedelta(days=365)
+x_max = df_pred_val["date_mesure"].max() + pd.Timedelta(days=10)
 y_min_global = min(df_hist_filtre["niveau_nappe_eau"].min(), _seuils["p5"])  - 0.5
 y_max_global = max(df_hist_filtre["niveau_nappe_eau"].max(), _seuils["p95"]) + 0.5
 
@@ -107,10 +114,6 @@ y_max_global = max(df_hist_filtre["niveau_nappe_eau"].max(), _seuils["p95"]) + 0
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _build_seuils_df() -> pd.DataFrame:
-    """
-    Construit le DataFrame Altair pour les bandes de seuils.
-    Les couleurs viennent de SEUIL_COLORS — aucune valeur hardcodée ici.
-    """
     rows = [
         {"y_min": _seuils["p95"],  "y_max": y_max_global,   "Couleur": "Très haut",       "#color": SEUIL_COLORS["Très haut"]["bg"]},
         {"y_min": _seuils["p85"],  "y_max": _seuils["p95"], "Couleur": "Modérément haut", "#color": SEUIL_COLORS["Modérément haut"]["bg"]},
@@ -123,11 +126,7 @@ def _build_seuils_df() -> pd.DataFrame:
 
 
 def _get_statut(valeur: float) -> tuple[str, str]:
-    """
-    Retourne (nom_statut, couleur_fg) pour une valeur de nappe donnée.
-    Couleurs issues de SEUIL_COLORS.
-    """
-    if valeur <= _seuils["p5"]:   nom = "Crise"
+    if valeur <= _seuils["p5"]:    nom = "Crise"
     elif valeur <= _seuils["p10"]: nom = "Alerte"
     elif valeur <= _seuils["p20"]: nom = "Vigilance"
     elif valeur <= _seuils["p85"]: nom = "Normal"
@@ -137,13 +136,8 @@ def _get_statut(valeur: float) -> tuple[str, str]:
 
 
 def _render_seuils_card(derniere_val: float) -> None:
-    """
-    Affiche la card seuils complète (barre gradient + tableau des niveaux).
-    Toutes les couleurs viennent de SEUIL_COLORS.
-    """
     statut_actuel, couleur_statut = _get_statut(derniere_val)
 
-    # Correspondance seuil → percentile pour l'affichage des limites
     limites = {
         "Très haut":       f"{_seuils['p95']:.1f} m",
         "Modérément haut": f"{_seuils['p85']:.1f} m",
@@ -153,7 +147,6 @@ def _render_seuils_card(derniere_val: float) -> None:
         "Crise":           f"≤ {_seuils['p5']:.1f} m",
     }
 
-    # Barre gradient (couleurs dans l'ordre Crise → Très haut)
     gradient_stops = " ,".join([
         f"{SEUIL_COLORS[nom]['bg']} {i * 100 // 6}%, {SEUIL_COLORS[nom]['bg']} {(i+1) * 100 // 6}%"
         for i, nom in enumerate(["Crise", "Alerte", "Vigilance", "Normal", "Modérément haut", "Très haut"])
@@ -228,17 +221,24 @@ fond_seuils = alt.Chart(seuils_df).mark_rect(opacity=0.45).encode(
     ), title="Seuils de gestion"),
 )
 
+print(f"x_min: {x_min}")
+print(f"x_max: {x_max}")
+print(f"df_pred_val dates: {df_pred_val['date_mesure'].tolist()}")
+
 lignes = alt.Chart(df_total).mark_line(strokeWidth=3).encode(
     x=alt.X("date_mesure:T", title="Date de mesure",
-            scale=alt.Scale(domain=[x_min.isoformat(), x_max.isoformat()])),
+            scale=alt.Scale(domain=[
+                x_min.strftime("%Y-%m-%d"),
+                x_max.strftime("%Y-%m-%d")
+            ])),
     y=alt.Y("niveau_nappe_eau:Q", title="Niveau de la nappe (m)",
             scale=alt.Scale(domain=[y_min_global, y_max_global], zero=False)),
     color=alt.Color("Type:N", scale=alt.Scale(
-        domain=["Historique Réel", "Prédiction XGBoost (Test)"],
-        range=[DESIGN_TOKENS["color_line"], DESIGN_TOKENS["color_line"]],
+        domain=["Historique Réel", "Prédiction XGBoost"],
+        range=[DESIGN_TOKENS["color_line"], DESIGN_TOKENS["color_line_pred"]],
     ), title="Données"),
     strokeDash=alt.condition(
-        alt.datum.Type == "Prédiction XGBoost (Test)",
+        alt.datum.Type == "Prédiction XGBoost",
         alt.value([6, 4]),
         alt.value([0, 0]),
     ),
@@ -265,7 +265,7 @@ with col_gauche:
         st.warning("Données géographiques non disponibles.")
 
     st.write("")
-    st.markdown("<p class='section-title'>Historique & Prévision (Mars 2026 → Mai 2026)</p>",
+    st.markdown("<p class='section-title'>Historique & Prévision</p>",
                 unsafe_allow_html=True)
     st.altair_chart(chart, width='stretch')
 
@@ -277,22 +277,49 @@ with col_droite:
     derniere_valeur_reelle = df_hist_filtre["niveau_nappe_eau"].iloc[-1]
     moyenne_pred           = df_pred_val["niveau_nappe_eau"].mean()
 
+    # Tendance 7J — différence entre aujourd'hui et il y a 7 jours
+    valeur_7j_avant = df_clean[
+        df_clean["date_mesure"] <= df_clean["date_mesure"].max() - pd.Timedelta(days=7)
+    ]["niveau_nappe_eau"].iloc[-1]
+    tendance_7j = derniere_valeur_reelle - valeur_7j_avant
+
+    # Variation prévision — différence entre prévision moyenne et niveau actuel
+    variation_prev = moyenne_pred - derniere_valeur_reelle
+
     kpi_col1, kpi_col2 = st.columns(2)
     with kpi_col1:
-        st.metric(label="NIVEAU ACTUEL", value=f"{derniere_valeur_reelle:.1f} m",
-                  delta="Normal", delta_color="normal")
+        statut, _ = _get_statut(derniere_valeur_reelle)
+        st.metric(
+            label="NIVEAU ACTUEL",
+            value=f"{derniere_valeur_reelle:.2f} m",
+            delta=statut,
+            delta_color="normal"
+        )
     with kpi_col2:
-        st.metric(label="TENDANCE 7 J", value="-0.3 m",
-                  delta="⬇ en baisse", delta_color="inverse")
+        st.metric(
+            label="TENDANCE 7 J",
+            value=f"{tendance_7j:+.2f} m",
+            delta=round(tendance_7j, 2),
+            delta_color="inverse" if tendance_7j > 0 else "normal"
+        )
 
     st.write("")
 
     kpi_col3, kpi_col4 = st.columns(2)
     with kpi_col3:
-        st.metric(label="PLUIE 7 J",    value="38 mm",  delta="⬆ 12 mm",   delta_color="normal")
+        st.metric(
+            label="PRÉVISION 90 J",
+            value=f"{moyenne_pred:.2f} m",
+            delta=f"{variation_prev:+.2f} m",
+            delta_color="normal" if variation_prev > 0 else "inverse"
+        )
     with kpi_col4:
-        st.metric(label="PRÉVISION 90 J", value=f"{moyenne_pred:.1f} m",
-                  delta="⚠ se creuse", delta_color="off")
+        st.metric(
+            label="PRÉCIPITATIONS 15 J",
+            value="— mm",
+            delta="données à venir",
+            delta_color="off"
+        )
 
     st.write("")
 
@@ -303,12 +330,12 @@ with col_droite:
 # ══════════════════════════════════════════════════════════════════════════════
 # MÉTRIQUES BAS DE PAGE
 # ══════════════════════════════════════════════════════════════════════════════
-st.write("---")
-st.markdown("<p class='section-title'>Détail des valeurs prédites pour le jeu de test</p>",
-            unsafe_allow_html=True)
-cols_val = st.columns(3)
+# st.write("---")
+# st.markdown("<p class='section-title'>Détail des valeurs prédites</p>",
+#             unsafe_allow_html=True)
+# cols_val = st.columns(3)
 
-for i, row in enumerate(df_pred_val.itertuples()):
-    with cols_val[i]:
-        st.metric(label=row.date_mesure.strftime("%B %Y"),
-                  value=f"{row.niveau_nappe_eau:.2f} m")
+# for i, row in enumerate(df_pred_val.itertuples()):
+#     with cols_val[i]:
+#         st.metric(label=row.date_mesure.strftime("%B %Y"),
+#                   value=f"{row.niveau_nappe_eau:.2f} m")

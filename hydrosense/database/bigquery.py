@@ -39,6 +39,35 @@ def load_piezo_bq(bss_id: str):
 
     return df
 
+def load_pem_bq(bss_id: str):
+
+    table_ref = f"{GCP_PROJECT_ID}.{BQ_DATASET_ID}.pem_{bss_id}"
+
+    query = f"""
+        SELECT date_mesure, niveau_nappe_eau,RR_synth, TM_synth, FFM_synth
+        FROM `{table_ref}`
+        ORDER BY date_mesure
+    """
+
+# WHERE bss_id = '{bss_id}' Ceci n'est pas un parquet
+
+    client = bigquery.Client(project=GCP_PROJECT_ID)
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", module="google.cloud.bigquery")
+        df = client.query(query).to_dataframe()
+
+    if df.empty:
+        raise ValueError(f"Aucune donnée trouvée pour {bss_id}")
+
+    df["date_mesure"] = pd.to_datetime(df["date_mesure"])
+    df.sort_values(by="date_mesure", inplace=True)
+    df.reset_index(drop=True, inplace=True)
+
+
+    print(f"PEM {bss_id} : {len(df)} lignes chargées")
+
+    return df
+
 def info_piezo(bss_id: str, raw = False):
     """
     Loads the information concerning the bss_id

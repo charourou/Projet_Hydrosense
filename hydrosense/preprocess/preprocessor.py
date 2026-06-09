@@ -35,6 +35,7 @@ def preprocess_week(df: pd.DataFrame) -> pd.DataFrame:
     df_w = pd.DataFrame(df_resample)
 
     df_w['semaine'] = df_w.index.isocalendar().week
+    
     df_w['lag_1'] = df_w['niveau_nappe_eau'].shift(1)
     df_w['lag_2'] = df_w['niveau_nappe_eau'].shift(2)
     df_w['lag_3'] = df_w['niveau_nappe_eau'].shift(3)
