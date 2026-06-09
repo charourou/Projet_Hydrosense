@@ -10,10 +10,11 @@ from colorama import Fore, Style
 from hydrosense.ml_logic.model import initialize_model, optimize_model, train_model, evaluate_model, predict_model
 
 from hydrosense.database.bigquery import load_piezo_bq
-from hydrosense.preprocess.cleaning import clean_piezo
+from hydrosense.preprocess.cleaning import clean_piezo, clean_piezo2
 from hydrosense.preprocess.preprocessor import preprocess_week
 
 from hydrosense import params
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PARAMS
@@ -25,7 +26,10 @@ DATA_CODE_PIEZO = "BSS001QTKG"
 
 DATE_COL     = "date_mesure"
 #FEATURE_COLS = ["mois", "lag_1", "lag_2", "lag_3", "lag_12", "moyenne_3m", "moyenne_6m"]
-FEATURE_COLS = ["semaine", "lag_1", "lag_2", "lag_3","lag_4" ,"lag_52", "moyenne_3w", "moyenne_6w"]
+#FEATURE_COLS = ["semaine", "lag_1", "lag_2", "lag_3", "lag_12", "moyenne_3m", "moyenne_6m"]
+#FEATURE_COLS = ["semaine", "lag_1", "lag_2", "lag_3","lag_4" ,"lag_52", "moyenne_3w", "moyenne_6w","RR_lag_1","RR_lag_2","RR_moy_4w"]
+FEATURE_COLS = ["semaine_sin","semaine_cos", "lag_1", "lag_2", "lag_3","lag_4" ,"lag_52", "moyenne_3w", "moyenne_6w","RR_synth"]
+#FEATURE_COLS = ["semaine_sin","semaine_cos", "lag_1","lag_4" ,"lag_52", "moyenne_3w", "moyenne_6w","RR_lag_1","RR_lag_2","RR_moy_4w"]
 
 # Split : 3 derniers mois en test (Mars → Mai 2026)
 TRAIN_END  = "2026-02-28"
@@ -104,6 +108,7 @@ def split_data(df_ml: pd.DataFrame):
     print(Fore.MAGENTA + "\n⭐️ Use case: split_data" + Style.RESET_ALL)
 
     X = df_ml[FEATURE_COLS]
+    print(FEATURE_COLS)
     y = df_ml[params.TARGET_COL]
 
     X_train = X.loc[:TRAIN_END].values
@@ -139,7 +144,7 @@ def train(X_train, y_train, optimize: bool = True):
         print(Fore.BLUE + f"\nBest params: {best_params}" + Style.RESET_ALL)
     else:
         #on lui passe des hyperparametres de qualité
-        model = initialize_model(n_estimators= 1000,learning_rate= 0.1,colsample_bytree=1.0,max_depth=2,subsample=0.8)
+        model = initialize_model(n_estimators= 1000,learning_rate= 0.1,max_depth=2,subsample=0.8,colsample_bytree =0.6, min_child_weight=5,random_state = 42)
 
         #model = initialize_model()
 
@@ -206,7 +211,8 @@ if __name__ == "__main__":
     start_time = time.time()
 
     # load from big query
-    df = clean_piezo(load_piezo_bq(DATA_CODE_PIEZO))
+    #df = clean_piezo(load_piezo_bq(DATA_CODE_PIEZO))
+    df = clean_piezo2(load_piezo_bq(DATA_CODE_PIEZO))
 
     df_ml = preprocess_week(df)
 
