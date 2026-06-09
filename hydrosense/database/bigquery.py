@@ -3,18 +3,23 @@ import pandas as pd
 from google.cloud import bigquery
 from hydrosense.params import *
 
-TABLE_ID   = "chroniques_piezo"
+#TABLE_ID   = "chroniques_piezo"
 
 def load_piezo_bq(bss_id: str):
+    TABLE_ID = "pem_" + bss_id
+    print(TABLE_ID)
+    print("ok")
 
     table_ref = f"{GCP_PROJECT_ID}.{BQ_DATASET_ID}.{TABLE_ID}"
 
     query = f"""
-        SELECT date_mesure, niveau_nappe_eau
+        SELECT date_mesure, niveau_nappe_eau,RR_synth
         FROM `{table_ref}`
-        WHERE bss_id = '{bss_id}'
+
         ORDER BY date_mesure
     """
+
+# WHERE bss_id = '{bss_id}'
 
     client = bigquery.Client(project=GCP_PROJECT_ID)
     # Catch and ignore the specific BigQuery Storage API fallback warning
