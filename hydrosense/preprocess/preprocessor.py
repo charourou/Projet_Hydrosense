@@ -32,6 +32,7 @@ def preprocess_week(df: pd.DataFrame) -> pd.DataFrame:
     # Feature engineering
     df_w = pd.DataFrame(y_week)
     df_w['semaine'] = df_w.index.isocalendar().week
+    
     df_w['lag_1'] = df_w['niveau_nappe_eau'].shift(1)
     df_w['lag_2'] = df_w['niveau_nappe_eau'].shift(2)
     df_w['lag_3'] = df_w['niveau_nappe_eau'].shift(3)
@@ -48,7 +49,6 @@ def preprocess_week(df: pd.DataFrame) -> pd.DataFrame:
     df_w = df_w.dropna()
 
     X = df_w[['semaine', 'lag_1', 'lag_2', 'lag_3','lag_4', 'lag_52', 'moyenne_3w', 'moyenne_6w']]
-
     y_target = df_w['niveau_nappe_eau']
 
     print(f"✅ preprocess() done — {len(df_w)} semaines | {df_w.shape[1]} colonnes\n")
