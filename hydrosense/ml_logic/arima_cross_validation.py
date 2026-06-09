@@ -16,6 +16,8 @@ def arima_cross_validate(
     n_splits_cv: int = 5,
     min_train_years: int = 3,
     val_months_duration: int = 3
+    val_duration_value: int = 3, # Renamed from val_months_duration
+    freq: str = 'M' # Added frequency parameter
 ) -> dict:
     """
     Effectue une cross-validation pour un modèle ARIMA en utilisant la stratégie
@@ -29,6 +31,8 @@ def arima_cross_validate(
         n_splits_cv (int): Nombre de splits pour la cross-validation.
         min_train_years (int): Nombre minimum d'années pour le premier jeu d'entraînement.
         val_months_duration (int): Durée du jeu de validation en mois.
+        val_duration_value (int): Duration of the validation set. Its unit depends on `freq`.
+        freq (str): Frequency of the data. 'M' for monthly, 'W' for weekly.
 
     Returns:
         dict: Un dictionnaire contenant les métriques d'évaluation pour chaque fold et la moyenne.
@@ -43,6 +47,8 @@ def arima_cross_validate(
             n_splits=n_splits_cv,
             min_train_years=min_train_years,
             val_months_duration=val_months_duration
+            val_duration_value=val_duration_value, # Renamed
+            freq=freq # Added
         )
     except ValueError as e:
         print(f"Erreur lors de la génération des folds: {e}")
@@ -126,6 +132,8 @@ if __name__ == "__main__":
         n_splits_cv=5,
         min_train_years=3,
         val_months_duration=3
+        val_duration_value=3, # Renamed
+        freq='M' # Assuming monthly data from preprocess()
     )
 
     print("\nRésultats de la Cross-Validation ARIMA:")

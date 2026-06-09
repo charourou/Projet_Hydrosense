@@ -210,7 +210,7 @@ def evaluate_model(
     rmse = float(np.sqrt(mean_squared_error(y, y_pred)))
     r2   = r2_score(y, y_pred)
     max_err = max([0,
-                   float(max((y-y_pred).values))]
+                   float(max(y-y_pred))]
                    )
 
     # RMSSE calculation
