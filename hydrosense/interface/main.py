@@ -173,29 +173,20 @@ def evaluate(model, X_test, y_test) -> dict:
     """
     print(Fore.MAGENTA + "\n⭐️ Use case: evaluate" + Style.RESET_ALL)
 
-    if False:
-        print('Evaluate en on folds.')
-
     metrics = evaluate_model(model, X_test, y_test)
     # evaluate deeper ?
 
     print("✅ evaluate() done \n")
     return metrics
 
-def evaluate_deeper(X_df: pd.DataFrame, y_df: pd.Series) -> Tuple[pd.DataFrame, pd.DataFrame]:
+def evaluate_deeper(X_df: pd.DataFrame, y_df: pd.Series, splits,
+                    X_test_df: pd.DataFrame, y_test_df: pd.Series
+                    ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Performs a cross-validation evaluation of the model using a time-series aware
     folding strategy (get_folds).
     """
-    print(Fore.MAGENTA + "\n⭐️ Use case: evaluate_deeper (Cross-Validation)" + Style.RESET_ALL)
-
-
-    splits = get_folds(
-        dates_series=X_df.index,
-        n_splits=5,
-        min_train_years=3,
-        val_months_duration=3
-    )
+    print(Fore.MAGENTA + "\n⭐️ Evaluate_deeper (Cross-Validation)" + Style.RESET_ALL)
 
     metrics_per_fold = []
     all_predictions = pd.DataFrame()
@@ -208,35 +199,44 @@ def evaluate_deeper(X_df: pd.DataFrame, y_df: pd.Series) -> Tuple[pd.DataFrame, 
         X_val_fold = X_df.iloc[val_idx]
         y_val_fold = y_df.iloc[val_idx]
 
-
+        # Train model on this fold
         model_fold = initialize_model()
-        model_fold, _ = train_model(model_fold, X_train_fold.values, y_train_fold.values)
+        model_fold, _ = train_model(model_fold, X_train_fold, y_train_fold)
 
-        # # 4. Predict and evaluate on train and validation sets
-        # y_pred_val = pd.Series(model_fold.predict(X_val_fold.values), index=y_val_fold.index)
-        # y_pred_train = pd.Series(model_fold.predict(X_train_fold.values), index=y_train_fold.index)
+        # Evaluate on Train, Validation (fold) and Test (unseen)
+        metrics_train = evaluate_model(model_fold, X_train_fold, y_train_fold,
+                                       y_train=y_train_fold,
+                                       verbose=False)
+        metrics_val = evaluate_model(model_fold, X_val_fold, y_val_fold,
+                                     y_train=y_train_fold,
+                                     verbose=False)
 
-        metrics_val = evaluate_model(model_fold, X_val_fold.values, y_val_fold.values, y_train=y_train_fold.values)
-        metrics_train = evaluate_model(model_fold, X_train_fold.values, y_train_fold.values, y_train=y_train_fold.values)
+        # Global test set evaluation (X_test_df/y_test_df are defined in global scope or passed)
+        # Here we assume we want to see how a model trained on a subset performs on the final test set
+        metrics_test = evaluate_model(model_fold, X_test_df, y_test_df,
+                                      y_train=y_train_fold, verbose=False)
 
-        print(f"  Train R²: {metrics_train['r2']:.3f} | Val R²: {metrics_val['r2']:.3f}")
-        print(f"  Train MAE: {metrics_train['mae']:.3f} | Val MAE: {metrics_val['mae']:.3f}")
+        print(f"  Fold {i+1} | Train MAE: {metrics_train['mae']:.3f} | Val MAE: {metrics_val['mae']:.3f} | Test MAE: {metrics_test['mae']:.3f}")
+        print(f"  Fold {i+1} | Train RMSE: {metrics_train['rmse']:.3f} | Val RMSE: {metrics_val['rmse']:.3f} | Test RMSE: {metrics_test['rmse']:.3f}")
+        print(f"  Fold {i+1} | Train RMSSE: {metrics_train['rmsse'] if np.isfinite(metrics_train['rmsse']) else 'inf'} | Val RMSSE: {metrics_val['rmsse'] if np.isfinite(metrics_val['rmsse']) else 'inf'} | Test RMSSE: {metrics_test['rmsse'] if np.isfinite(metrics_test['rmsse']) else 'inf'}")
+
 
         metrics_per_fold.append({
-            'fold': i + 1, 'val_start': y_val_fold.index.min(), 'val_end': y_val_fold.index.max(),
-            'r2_train': metrics_train['r2'], 'mae_train': metrics_train['mae'], 'rmse_train': metrics_train['rmse'], 'max_error_train': metrics_train['max_error'],
-            'r2_val': metrics_val['r2'], 'mae_val': metrics_val['mae'], 'rmse_val': metrics_val['rmse'], 'max_error_val': metrics_val['max_error'], 'rmsse_val': metrics_val['rmsse']
+            'fold': i + 1,
+            'train_size': len(train_idx),
+            'mae_train': metrics_train['mae'], 'rmse_train': metrics_train['rmse'], 'r2_train': metrics_train['r2'], 'max_error_train': metrics_train['max_error'], 'rmsse_train': metrics_train['rmsse'],
+            'mae_val': metrics_val['mae'], 'rmse_val': metrics_val['rmse'], 'r2_val': metrics_val['r2'], 'max_error_val': metrics_val['max_error'], 'rmsse_val': metrics_val['rmsse'],
+            'mae_test': metrics_test['mae'], 'rmse_test': metrics_test['rmse'], 'r2_test': metrics_test['r2'], 'max_error_test': metrics_test['max_error'], 'rmsse_test': metrics_test['rmsse']
         })
 
-        # # Store predictions for visualization
-        # fold_predictions = pd.DataFrame({'date': y_val_fold.index, 'actual': y_val_fold, 'forecast': y_pred_val, 'fold': i + 1})
-        # all_predictions = pd.concat([all_predictions, fold_predictions])
-
     metrics_df = pd.DataFrame(metrics_per_fold)
-    print("\n--- Cross-Validation Summary ---")
-    print("Average metrics on validation sets:")
-    print(metrics_df[['r2_val', 'mae_val', 'rmse_val', 'max_error_val', 'rmsse_val']].mean().round(3))
-
+    print("\n--- Learning Curve / CV Summary ---")
+    print("Average metrics on training sets:")
+    print(metrics_df[['mae_train', 'rmse_train', 'r2_train', 'max_error_train', 'rmsse_train']].mean().round(3))
+    print("\nAverage metrics on validation sets:")
+    print(metrics_df[['mae_val', 'rmse_val', 'r2_val', 'max_error_val', 'rmsse_val']].mean().round(3))
+    print("\nAverage metrics on test sets (from models trained on CV folds):")
+    print(metrics_df[['mae_test', 'rmse_test', 'r2_test', 'max_error_test', 'rmsse_test']].mean().round(3))
     print("\n✅ evaluate_deeper() done \n")
     return metrics_df, all_predictions
 
@@ -276,8 +276,6 @@ def pred(model, df_ml: pd.DataFrame) -> pd.Series:
 if __name__ == "__main__":
 
     # 1. Données — une seule fois
-    #df    = load_data() # du CSV
-    # load from big query
     df = clean_piezo(load_piezo_bq(DATA_CODE_PIEZO))
 
     if params.DATE_COL in df.columns:
@@ -295,17 +293,18 @@ if __name__ == "__main__":
         test_splits = get_folds(
             # Passe directement le DatetimeIndex de X_train_df
             dates_series=X_train_df.index,
-            n_splits=3, # Nombre de splits à visualiser
+            n_splits= 20 , # Nombre de splits à visualiser
             min_train_years=3,
             val_months_duration=3
         )
         for i, (train_idx, val_idx) in enumerate(test_splits):
-            # Utilise X_train_df pour récupérer les dates réelles pour la visualisation
+
             train_period = X_train_df.iloc[train_idx].index
             val_period = X_train_df.iloc[val_idx].index
             print(f"  Split {i+1}:")
             print(f"    Train: {train_period.min().strftime('%Y-%m')} à {train_period.max().strftime('%Y-%m')} ({len(train_idx)} samples)")
             print(f"    Val:   {val_period.min().strftime('%Y-%m')} à {val_period.max().strftime('%Y-%m')} ({len(val_idx)} samples)")
+
             # Assertions pour vérifier l'absence de fuite temporelle et l'ordre chronologique
             assert train_period.max() < val_period.min(), f"Fuite temporelle détectée dans Split {i+1}!" # Vérifie l'ordre chronologique
             assert len(val_period) == 3, f"La durée de validation n'est pas respectée dans Split {i+1}!" # Vérifie le nombre exact de mois
@@ -313,15 +312,23 @@ if __name__ == "__main__":
         print(f"  Erreur lors de la visualisation des splits: {e}")
     print(Fore.CYAN + "--- Fin de la visualisation des splits ---" + Style.RESET_ALL)
 
+
+
+
+
     # 2. Train — optimize=True pour GridSearchCV
-    model, history = train(X_train_df, y_train_df, optimize=True)
+    model, history = train(X_train_df, y_train_df, optimize=False)
 
     # 3. Evaluate — même modèle, pas de rechargement
-    metrics = evaluate(model, X_test_df.values, y_test_df.values, y_train_df.values)
+    metrics = evaluate(model, X_test_df, y_test_df)
+    print(metrics)
 
-    # 3b. Deeper Evaluation with Cross-Validation on the training set
+    # 3b. Deeper Evaluation with Cross-Validation on the training set and final test set
     print(Fore.CYAN + "\n--- Évaluation approfondie par Cross-Validation ---" + Style.RESET_ALL)
-    cv_metrics, cv_predictions = evaluate_deeper(X_train_df, y_train_df)
+    cv_metrics, cv_predictions = evaluate_deeper(X_train_df, y_train_df, test_splits, X_test_df, y_test_df)
+    print(cv_predictions)
+    # 4. Predict — prévision 3 mois futurs
+    forecast = pred(model, df_ml)
 
     # 4. Predict — prévision 3 mois futurs
     forecast = pred(model, df_ml)

@@ -13,6 +13,8 @@ BUCKET_NAME = os.environ.get("BUCKET_NAME")
 INSTANCE = os.environ.get("INSTANCE")
 
 
+TARGET_COL = "niveau_nappe_eau"
+DATE_COL = "date_mesure"
 
 MLFLOW_TRACKING_URI = ''
 MLFLOW_EXPERIMENT = ''

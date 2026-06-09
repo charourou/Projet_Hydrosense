@@ -182,8 +182,9 @@ def evaluate_model(
     model: XGBRegressor,
     X: np.ndarray,
     y: np.ndarray,
-    y_train: Optional[np.ndarray] = None
-) -> dict:
+    y_train: Optional[np.ndarray] = None,
+    verbose = True
+        ) -> dict:
     """
     Evaluate the trained model on a given set.
 
@@ -208,8 +209,10 @@ def evaluate_model(
     mae  = mean_absolute_error(y, y_pred)
     rmse = float(np.sqrt(mean_squared_error(y, y_pred)))
     r2   = r2_score(y, y_pred)
-    max_err = float(np.max( [0 , (y - y_pred)]
-                           ))
+    max_err = max([0,
+                   float(max((y-y_pred).values))]
+                   )
+
     # RMSSE calculation
     rmsse = np.nan
     if y_train is not None and len(y_train) > 1:
@@ -229,13 +232,13 @@ def evaluate_model(
         "max_error": round(max_err, 4),
         "rmsse" : round(rmsse, 4) if np.isfinite(rmsse) else rmsse
             }
-
-    print(f"✅ Model evaluated on test set")
-    print(f"   MAE  : {metrics['mae']}  (erreur moyenne en mètres NGF)")
-    print(f"   RMSE : {metrics['rmse']} (pénalise les grandes erreurs)")
-    print(f"   R²   : {metrics['r2']}  (1.0 = parfait)")
-    print(f"   Max Error: {metrics['max_error']} (erreur maximale absolue)")
-    print(f"   RMSSE: {metrics['rmsse']} (erreur par rapport au choix naif)")
+    if verbose:
+        print(f"✅ Model evaluated on test set")
+        print(f"   MAE  : {metrics['mae']}  (erreur moyenne en mètres NGF)")
+        print(f"   RMSE : {metrics['rmse']} (pénalise les grandes erreurs)")
+        print(f"   R²   : {metrics['r2']}  (1.0 = parfait)")
+        print(f"   Max Error: {metrics['max_error']} (erreur maximale absolue)")
+        print(f"   RMSSE: {metrics['rmsse']} (erreur par rapport au choix naif)")
 
     return metrics
 
