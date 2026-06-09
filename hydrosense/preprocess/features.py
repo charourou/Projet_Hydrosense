@@ -10,8 +10,6 @@ from hydrosense.preprocess.cleaning import clean_piezo
 from hydrosense.utils.geo import trouver_voisins_hydrogeologiques
 
 
-
-
 def extraire_PCA_piezo( voisins_ids: list,
                                     n_components: int = 1,
                                     fenetre_lissage: int = 7,
@@ -81,3 +79,58 @@ def extraire_PCA_piezo( voisins_ids: list,
         plt.show()
 
     return df_pca
+
+import pandas as pd
+# from hydrosense.preprocess.neighbors import trouver_voisins_hydrogeologiques
+# from hydrosense.preprocess.features import extraire_composantes_regionales
+
+def enrichir_contexte_regional(df_cible: pd.DataFrame,
+                               bss_cible: str,
+                               df_catalogue: pd.DataFrame,
+                               n_voisins: int = 10) -> pd.DataFrame:
+    """
+    Orchestre les Étapes 4 et 5 :
+    - Trouve les voisins hydrogéologiques.
+    - Calcule l'ACP de leurs niveaux d'eau bruts.
+    - Fusionne les composantes (PC1, PC2, PC3) avec le DataFrame cible.
+    """
+    print(f"\n🌍 ÉTAPE 4 : Recherche du contexte régional pour {bss_cible}...")
+
+    try:
+        # 1. Identification des voisins
+        top_voisins = trouver_voisins_hydrogeologiques(
+                                        df_catalogue=df_catalogue,
+                                        bss_target=bss_cible,
+                                        n_voisins=n_voisins
+                                                        )
+        voisins_ids = top_voisins['bss_id'].values
+
+        if len(voisins_ids) == 0:
+            print("⚠️ Aucun voisin pertinent trouvé.")
+            return df_cible
+
+        print(f"   ✔️ {len(voisins_ids)} voisins trouvés. Calcul de l'ACP...")
+
+        # 2. Extraction des features (Cette fonction appelle votre load_piezo_bq réparée !)
+        df_pca = extraire_PCA_piezo(
+                                    voisins_ids=voisins_ids,
+                                    n_components=3,
+                                    )
+
+        print("\n🔗 ÉTAPE 5 : Fusion finale des données (Merge)...")
+
+        # df_cible a une colonne 'date_mesure', df_pca a la date en index
+        df_enrichi = df_cible.merge(
+                                    df_pca,
+                                    left_on='date_mesure',
+                                    right_index=True,
+                                    how='left'
+                                    )
+
+        print(f"✅ Contexte régional ajouté avec succès ({len(df_pca.columns)} nouvelles colonnes).")
+        return df_enrichi
+
+    except Exception as e:
+        print(f"❌ Erreur critique lors de l'intégration du contexte régional : {e}")
+        # En cas d'erreur (ex: problème réseau BigQuery), on ne plante pas toute la boucle
+        return df_cible
