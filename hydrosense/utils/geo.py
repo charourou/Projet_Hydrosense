@@ -53,7 +53,9 @@ def appliquer_idw_df(df: pd.DataFrame, colonnes_cibles: list, distances: list) -
     return series_idw
 
 
-def trouver_voisins_hydrogeologiques(df_catalogue: pd.DataFrame, bss_target: str, n_voisins: int = 10) -> pd.DataFrame:
+def trouver_voisins_hydrogeologiques(df_catalogue: pd.DataFrame,
+                                     bss_target: str,
+                                     n_voisins: int = 10) -> pd.DataFrame:
     """
     Trouve les piézomètres voisins les plus pertinents pour une cible donnée.
     Priorité : 1. Même Masse d'eau -> 2. Même Géologie (BD Lisa) -> 3. Distance géographique.

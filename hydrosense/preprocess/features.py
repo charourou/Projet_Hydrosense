@@ -7,6 +7,10 @@ from sklearn.decomposition import PCA
 
 from hydrosense.database.bigquery import load_piezo_bq
 from hydrosense.preprocess.cleaning import clean_piezo
+from hydrosense.utils.geo import trouver_voisins_hydrogeologiques
+
+
+
 
 def extraire_PCA_piezo( voisins_ids: list,
                                     n_components: int = 1,
