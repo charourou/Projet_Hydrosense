@@ -85,11 +85,20 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
 
     # Feature engineering
     df_ml = pd.DataFrame(y_mensuel)
+
+    # Cossiner les lignes suivantes
     df_ml["mois"]       = df_ml.index.month
+    if False:
+        df_ml["mois_sin"] = np.sin(2 * np.pi * df_ml.index.month / 12)
+        df_ml["mois_cos"] = np.cos(2 * np.pi * df_ml.index.month / 12)
+
     df_ml["lag_1"]      = df_ml[params.TARGET_COL].shift(1)
     df_ml["lag_2"]      = df_ml[params.TARGET_COL].shift(2)
     df_ml["lag_3"]      = df_ml[params.TARGET_COL].shift(3)
     df_ml["lag_12"]     = df_ml[params.TARGET_COL].shift(12)
+
+    # A supprimer
+
     df_ml["moyenne_3m"] = df_ml[params.TARGET_COL].rolling(window=3).mean()
     df_ml["moyenne_6m"] = df_ml[params.TARGET_COL].rolling(window=6).mean()
     df_ml = df_ml.dropna()
@@ -193,6 +202,13 @@ def evaluate_deeper(X_df: pd.DataFrame, y_df: pd.Series, splits,
 
     for i, (train_idx, val_idx) in enumerate(splits):
         print(f"\n--- Fold {i+1}/{len(splits)} ---")
+
+        print(f"Debug: Current fold {i+1}")
+        print(f"Debug: len(X_df) = {len(X_df)}")
+        print(f"Debug: len(train_idx) = {len(train_idx)}")
+        if train_idx:
+            print(f"Debug: max(train_idx) = {max(train_idx)}")
+
 
         X_train_fold = X_df.iloc[train_idx]
         y_train_fold = y_df.iloc[train_idx]
