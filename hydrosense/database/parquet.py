@@ -14,7 +14,7 @@ TEMP_PARQUET_FILE = "all_chroniques.parquet"
 # Vérification de l'inclusion dans la liste des stations autorisées
 STATIONS_AUTORISEES = []
 
-client = bigquery.Client(project=PROJECT_ID)
+client = bigquery.Client(project=GCP_PROJECT_ID)
 table_ref = f"{GCP_PROJECT_ID}.{BQ_DATASET_ID}.{TABLE_ID}"
 
 schema = [
@@ -112,7 +112,14 @@ def upload_to_bigquery():
         os.remove(TEMP_PARQUET_FILE)
 
 
+
+
+
 # PIPELINE 2 : DONNÉES MACHINE LEARNING (Parquet -> chroniques_plean)
+
+NEW_DATA_DIR = "/home/charourou/projects/Projet_Hydrosense/data/processed_pem/"
+
+
 def upload_chroniques_plean():
     """
     Fusionne les fichiers Parquet locaux préparés
@@ -121,15 +128,16 @@ def upload_chroniques_plean():
     target_table_id = "chroniques_plean"
     target_table_ref = f"{GCP_PROJECT_ID}.{BQ_DATASET_ID}.{target_table_id}"
 
-    dossier_parquets = os.path.join(LOCAL_DATA_DIR, "processed_pem", "*.parquet")
-    cache_global = os.path.join(LOCAL_DATA_DIR, "all_chroniques_plean.parquet")
+    dossier_parquets = os.path.join(NEW_DATA_DIR, "*.parquet")
+    cache_global = os.path.join(NEW_DATA_DIR, "all_chroniques_plean.parquet")
 
     print("\n📥 1. Lecture et fusion des fichiers Parquet locaux (Features ML)...")
     df_list = []
 
     for file_path in glob.glob(dossier_parquets):
-        # Extraction du code BSS
+
         nom_fichier = Path(file_path).stem
+        print(nom_fichier)
         bss_id = nom_fichier.split('_')[-1]
 
         df = pd.read_parquet(file_path)
@@ -142,9 +150,6 @@ def upload_chroniques_plean():
 
     # Fusion globale
     df_global = pd.concat(df_list, ignore_index=True)
-
-    # Réorganisation des colonnes et nettoyage des noms
-    df_global.rename(columns={'PC1_hydro': 'PC1', 'PC2_hydro': 'PC2', 'PC3_hydro': 'PC3'}, inplace=True, errors='ignore')
     cols = ['bss_id', 'date_mesure', 'niveau_nappe_eau', 'RR_synth', 'TM_synth', 'FFM_synth', 'PU_synth', 'PC1', 'PC2', 'PC3']
     df_global = df_global[[c for c in cols if c in df_global.columns]]
 
@@ -154,10 +159,21 @@ def upload_chroniques_plean():
     print(f"🚀 3. Upload de {len(df_global)} lignes vers BigQuery ({target_table_id})...")
 
     # WRITE_TRUNCATE permet d'écraser l'ancienne table à chaque fois
-    job_config = bigquery.LoadJobConfig(write_disposition="WRITE_TRUNCATE")
+    job_config = bigquery.LoadJobConfig(
+                                        write_disposition="WRITE_TRUNCATE",
+                                        time_partitioning=bigquery.TimePartitioning(
+                                                                                type_=bigquery.TimePartitioningType.YEAR,
+                                                                                field="date_mesure"
+                                                                                    ),
+                                        clustering_fields=["bss_id"]
+                                        )
+
+
 
     # BigQuery devine le schéma tout seul grâce à l'objet Pandas
-    job = client.load_table_from_dataframe(df_global, target_table_ref, job_config=job_config)
+    job = client.load_table_from_dataframe(df_global,
+                                           target_table_ref,
+                                           job_config=job_config)
     job.result()
 
     print(f"✅ Upload terminé avec succès ! La table {target_table_id} est prête pour XGBoost.")
