@@ -181,19 +181,22 @@ def train_model(
 def evaluate_model(
     model: XGBRegressor,
     X: np.ndarray,
-    y: np.ndarray
-) -> dict:
+    y: np.ndarray,
+    y_train: Optional[np.ndarray] = None,
+    verbose = True
+        ) -> dict:
     """
-    Evaluate the trained model on a test set.
+    Evaluate the trained model on a given set.
 
     Parameters
     ----------
     model : fitted XGBRegressor
     X, y  : test data (jamais vus pendant l'entraînement)
+    y_train: optionel pour calcul RMSSE
 
     Returns
     -------
-    metrics dict : mae, rmse, r2
+    metrics dict : mae, rmse, r2, max_error
     """
     print(Fore.BLUE + f"\nEvaluating model on {len(X)} rows..." + Style.RESET_ALL)
 
@@ -204,22 +207,40 @@ def evaluate_model(
     y_pred = model.predict(X)
 
     mae  = mean_absolute_error(y, y_pred)
-    rmse = np.sqrt(mean_squared_error(y, y_pred))
+    rmse = float(np.sqrt(mean_squared_error(y, y_pred)))
     r2   = r2_score(y, y_pred)
+    max_err = max([0,
+                   float(max(y-y_pred))]
+                   )
+
+    # RMSSE calculation
+    rmsse = np.nan
+    if y_train is not None and len(y_train) > 1:
+        # Denominator is the RMSE of a naive one-step forecast on the training data.
+        naive_mse_on_train = mean_squared_error(y_train[1:], y_train[:-1])
+        rmse_naive_on_train = np.sqrt(naive_mse_on_train)
+        if rmse_naive_on_train > 1e-9:  # Avoid division by zero
+            rmsse = rmse / rmse_naive_on_train
+        else:
+            rmsse = np.inf if rmse > 1e-9 else 0.0
+        # Naive model is perfect, if our model is also perfect, RMSSE is 0
 
     metrics = {
         "mae":  round(mae, 4),
         "rmse": round(rmse, 4),
-        "r2":   round(r2, 4)
-    }
-
-    print(f"✅ Model evaluated on test set")
-    print(f"   MAE  : {metrics['mae']}  (erreur moyenne en mètres NGF)")
-    print(f"   RMSE : {metrics['rmse']} (pénalise les grandes erreurs)")
-    print(f"   R²   : {metrics['r2']}  (1.0 = parfait)")
+        "r2":   round(r2, 4),
+        "max_error": round(max_err, 4),
+        "rmsse" : round(rmsse, 4) if np.isfinite(rmsse) else rmsse
+            }
+    if verbose:
+        print(f"✅ Model evaluated on test set")
+        print(f"   MAE  : {metrics['mae']}  (erreur moyenne en mètres NGF)")
+        print(f"   RMSE : {metrics['rmse']} (pénalise les grandes erreurs)")
+        print(f"   R²   : {metrics['r2']}  (1.0 = parfait)")
+        print(f"   Max Error: {metrics['max_error']} (erreur maximale absolue)")
+        print(f"   RMSSE: {metrics['rmsse']} (erreur par rapport au choix naif)")
 
     return metrics
-
 
 def predict_model(
     model: XGBRegressor,
@@ -227,15 +248,6 @@ def predict_model(
 ) -> np.ndarray:
     """
     Generate predictions for new input data.
-
-    Parameters
-    ----------
-    model : fitted XGBRegressor
-    X     : feature matrix (même colonnes que l'entraînement)
-
-    Returns
-    -------
-    np.ndarray of predicted water table levels
     """
     if model is None:
         print(f"\n❌ No model to predict with")
