@@ -3,6 +3,9 @@ import pandas as pd
 
 from pathlib import Path
 from colorama import Fore, Style
+from typing import Tuple
+
+from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error, max_error
 
 from hydrosense.ml_logic.model import initialize_model, optimize_model, train_model, evaluate_model, predict_model
 from hydrosense.ml_logic.folding import get_folds
@@ -11,11 +14,14 @@ from hydrosense.database.bigquery import load_piezo_bq
 from hydrosense.preprocess.cleaning import clean_piezo
 from hydrosense.preprocess.preprocessor import preprocess_week
 
+
 from hydrosense import params
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PARAMS
+#  TODO : GERER PARAMS
 # ══════════════════════════════════════════════════════════════════════════════
+
+MODEL_TYPE = 'XGB'  # ['LINEAR','BAG'] ??
 
 DATA_PATH    = Path("data/piezo_bourdet_clean.csv")
 DATA_CODE_PIEZO = "BSS001QHYH"
@@ -159,7 +165,7 @@ def train(X_train_df: pd.DataFrame, y_train_df: pd.Series, optimize: bool = True
 
 def evaluate(model, X_test, y_test) -> dict:
     """
-    Évalue le modèle sur les 3 mois de test (jamais vus à l'entraînement).
+    Évalue le modèle sur les (3 mois) de test (jamais vus à l'entraînement).
 
     Returns
     -------
@@ -167,11 +173,72 @@ def evaluate(model, X_test, y_test) -> dict:
     """
     print(Fore.MAGENTA + "\n⭐️ Use case: evaluate" + Style.RESET_ALL)
 
+    if False:
+        print('Evaluate en on folds.')
+
     metrics = evaluate_model(model, X_test, y_test)
+    # evaluate deeper ?
 
     print("✅ evaluate() done \n")
     return metrics
 
+def evaluate_deeper(X_df: pd.DataFrame, y_df: pd.Series) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Performs a cross-validation evaluation of the model using a time-series aware
+    folding strategy (get_folds).
+    """
+    print(Fore.MAGENTA + "\n⭐️ Use case: evaluate_deeper (Cross-Validation)" + Style.RESET_ALL)
+
+
+    splits = get_folds(
+        dates_series=X_df.index,
+        n_splits=5,
+        min_train_years=3,
+        val_months_duration=3
+    )
+
+    metrics_per_fold = []
+    all_predictions = pd.DataFrame()
+
+    for i, (train_idx, val_idx) in enumerate(splits):
+        print(f"\n--- Fold {i+1}/{len(splits)} ---")
+
+        X_train_fold = X_df.iloc[train_idx]
+        y_train_fold = y_df.iloc[train_idx]
+        X_val_fold = X_df.iloc[val_idx]
+        y_val_fold = y_df.iloc[val_idx]
+
+
+        model_fold = initialize_model()
+        model_fold, _ = train_model(model_fold, X_train_fold.values, y_train_fold.values)
+
+        # # 4. Predict and evaluate on train and validation sets
+        # y_pred_val = pd.Series(model_fold.predict(X_val_fold.values), index=y_val_fold.index)
+        # y_pred_train = pd.Series(model_fold.predict(X_train_fold.values), index=y_train_fold.index)
+
+        metrics_val = evaluate_model(model_fold, X_val_fold.values, y_val_fold.values)
+        metrics_train = evaluate_model(model_fold, X_train_fold.values, y_train_fold.values)
+
+        print(f"  Train R²: {metrics_train['r2']:.3f} | Val R²: {metrics_val['r2']:.3f}")
+        print(f"  Train MAE: {metrics_train['mae']:.3f} | Val MAE: {metrics_val['mae']:.3f}")
+
+        metrics_per_fold.append({
+            'fold': i + 1, 'val_start': y_val_fold.index.min(), 'val_end': y_val_fold.index.max(),
+            'r2_train': metrics_train['r2'], 'mae_train': metrics_train['mae'], 'rmse_train': metrics_train['rmse'], 'max_error_train': metrics_train['max_error'],
+            'r2_val': metrics_val['r2'], 'mae_val': metrics_val['mae'], 'rmse_val': metrics_val['rmse'], 'max_error_val': metrics_val['max_error']
+        })
+
+        # # Store predictions for visualization
+        # fold_predictions = pd.DataFrame({'date': y_val_fold.index, 'actual': y_val_fold, 'forecast': y_pred_val, 'fold': i + 1})
+        # all_predictions = pd.concat([all_predictions, fold_predictions])
+
+    metrics_df = pd.DataFrame(metrics_per_fold)
+    print("\n--- Cross-Validation Summary ---")
+    print("Average metrics on validation sets:")
+    print(metrics_df[['r2_val', 'mae_val', 'rmse_val', 'max_error_val']].mean().round(3))
+
+    print("\n✅ evaluate_deeper() done \n")
+    return metrics_df, all_predictions
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 6. PREDICT — prévision 13 prochaines semaines
@@ -246,6 +313,10 @@ if __name__ == "__main__":
 
     # 3. Evaluate — même modèle, pas de rechargement
     metrics = evaluate(model, X_test_df.values, y_test_df.values)
+
+    # 3b. Deeper Evaluation with Cross-Validation on the training set
+    print(Fore.CYAN + "\n--- Évaluation approfondie par Cross-Validation ---" + Style.RESET_ALL)
+    cv_metrics, cv_predictions = evaluate_deeper(X_train_df, y_train_df)
 
     # 4. Predict — prévision 3 mois futurs
     forecast = pred(model, df_ml)
