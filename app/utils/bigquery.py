@@ -65,10 +65,11 @@ def load_catalog_interm() -> pd.DataFrame:
     pour alimenter le sélecteur de l'interface.
     """
     query = f"""
-        SELECT bss_id, nom_commune, code_departement
-        FROM {_table('cat_piezo_interm')}
-        WHERE bss_id IS NOT NULL
-        ORDER BY code_departement, nom_commune
+        SELECT i.bss_id, i.nom_commune, i.code_departement, r.nom_departement
+        FROM {_table('cat_piezo_interm')} i
+        LEFT JOIN {_table('cat_piezo_raw')} r USING (bss_id)
+        WHERE i.bss_id IS NOT NULL
+        ORDER BY i.code_departement, i.nom_commune
     """
     return _client.query(query).to_dataframe()
 
