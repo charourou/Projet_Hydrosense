@@ -10,9 +10,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from hydrosense.database.bigquery import load_piezo_bq
-from hydrosense.preprocess.cleaning import clean_piezo
-from utils.bigquery import load_single_piezo_map, load_catalog_interm, load_seuils_interm
+from utils.api_client import load_single_piezo_map, load_catalog_interm, load_seuils_interm, load_historique
 from utils.theme import SEUIL_COLORS, SEUIL_ORDER, DESIGN_TOKENS
 
 # ── Fallback seuils quand BQ ne retourne rien ────────────────────────────────
@@ -61,8 +59,7 @@ DATA_CODE_PIEZO = df_catalog.loc[df_catalog["label"] == selected_label, "bss_id"
 
 @st.cache_data
 def get_historique(bss_id: str) -> pd.DataFrame:
-    df_raw = load_piezo_bq(bss_id)
-    return clean_piezo(df_raw)
+    return load_historique(bss_id)
 
 
 @st.cache_data
