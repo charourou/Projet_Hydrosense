@@ -2,7 +2,7 @@
 pages/piezo-dashboard.py
 ────────────────────────
 Dashboard principal : historique + prévision XGBoost + seuils de gestion.
-Les prévisions sont chargées via l'API FastAPI (localhost:8000/predict).
+Les prévisions sont chargées via l'API FastAPI (Cloud Run).
 """
 
 import requests
@@ -10,9 +10,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from hydrosense.database.bigquery import load_piezo_bq
-from hydrosense.preprocess.cleaning import clean_piezo
-from utils.bigquery import load_single_piezo_map, load_catalog_interm, load_seuils_interm
+from utils.api_client import load_single_piezo_map, load_catalog_interm, load_seuils_interm, load_historique, API_URL
 from utils.theme import SEUIL_COLORS, SEUIL_ORDER, DESIGN_TOKENS
 
 # ── Fallback seuils quand BQ ne retourne rien ────────────────────────────────
@@ -61,14 +59,13 @@ DATA_CODE_PIEZO = df_catalog.loc[df_catalog["label"] == selected_label, "bss_id"
 
 @st.cache_data
 def get_historique(bss_id: str) -> pd.DataFrame:
-    df_raw = load_piezo_bq(bss_id)
-    return clean_piezo(df_raw)
+    return load_historique(bss_id)
 
 
 @st.cache_data
 def get_forecast(bss_id: str) -> dict:
     response = requests.get(
-        "http://localhost:8000/predict",
+        f"{API_URL}/predict",
         params={"bss_id": bss_id}
     )
     response.raise_for_status()

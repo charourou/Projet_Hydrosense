@@ -1,5 +1,5 @@
 import streamlit as st
-from utils.bigquery import load_piezo
+from utils.api_client import load_piezo
 
 st.title("📊 Données piézométriques")
 
