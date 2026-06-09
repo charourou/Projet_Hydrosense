@@ -213,7 +213,7 @@ if __name__ == "__main__":
     # load from big query
     df = clean_piezo(load_piezo_bq(DATA_CODE_PIEZO))
 
-    df_ml = preprocess(df)  # OR preprocess_week ???
+    df_ml = preprocess_week(df)  # OR preprocess_week ???
     X_train_df, X_test_df, y_train_df, y_test_df = split_data(df_ml)
 
     # --- Zone de test pour visualiser les splits de cross-validation ---
@@ -249,3 +249,45 @@ if __name__ == "__main__":
 
     # 4. Predict — prévision 3 mois futurs
     forecast = pred(model, df_ml)
+
+
+# probleme de dataleakage ??? 
+def pred_future(model, df_ml: pd.DataFrame, n_weeks: int = 13) -> pd.Series:
+    """
+    Génère les prévisions sur les n_weeks prochaines semaines (futur réel).
+    Utilise une boucle autorégressive — chaque semaine prédit la suivante.
+    """
+    print(Fore.MAGENTA + "\n⭐️ Use case: pred_future" + Style.RESET_ALL)
+
+    FEATURE_COLS = ["semaine", "lag_1", "lag_2", "lag_3", "lag_4", "lag_52", "moyenne_3w", "moyenne_6w"]
+    df_future = df_ml.copy()
+    predictions = []
+
+    for i in range(n_weeks):
+        last_row = df_future[FEATURE_COLS].tail(1).values
+        y_next = predict_model(model, last_row)[0]
+        next_date = df_future.index[-1] + pd.Timedelta(weeks=1)
+
+        new_row = pd.DataFrame({
+            "niveau_nappe_eau": [y_next],
+            "semaine":    [next_date.isocalendar().week],
+            "lag_1":      [y_next],
+            "lag_2":      [df_future["niveau_nappe_eau"].iloc[-1]],
+            "lag_3":      [df_future["niveau_nappe_eau"].iloc[-2]],
+            "lag_4":      [df_future["niveau_nappe_eau"].iloc[-3]],
+            "lag_52":     [df_future["niveau_nappe_eau"].iloc[-51]],
+            "moyenne_3w": [df_future["niveau_nappe_eau"].tail(3).mean()],
+            "moyenne_6w": [df_future["niveau_nappe_eau"].tail(6).mean()],
+        }, index=[next_date])
+
+        df_future = pd.concat([df_future, new_row])
+        predictions.append((next_date, round(float(y_next), 3)))
+
+    forecast = pd.Series(
+        [p[1] for p in predictions],
+        index=[p[0] for p in predictions],
+        name=params.TARGET_COL
+    )
+
+    print(f"\n✅ pred_future() done — {len(forecast)} semaines prédites\n")
+    return forecast

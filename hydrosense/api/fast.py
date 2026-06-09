@@ -4,7 +4,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from hydrosense.database.bigquery import load_piezo_bq
 from hydrosense.preprocess.cleaning import clean_piezo
+from hydrosense.preprocess.preprocessor import preprocess_week
 from hydrosense.interface.main import preprocess, train, pred
+from hydrosense.interface.main import train, pred_future
 
 app = FastAPI()
 
@@ -30,22 +32,26 @@ def predict(bss_id: str):
     df_raw = load_piezo_bq(bss_id)
     df_clean = clean_piezo(df_raw)
 
-    df_clean = df_clean.set_index("date_mesure")
+    # preprocess_week gère lui-même le set_index
+    # 2. Feature engineering hebdomadaire
+    df_w = preprocess_week(df_clean)
 
-    # 2. Feature engineering
-    df_ml = preprocess(df_clean)
+    # 3. Train sur toutes les données disponibles
+    FEATURE_COLS = ["semaine", "lag_1", "lag_2", "lag_3", "lag_4", "lag_52", "moyenne_3w", "moyenne_6w"]
+    X_train = df_w[FEATURE_COLS]
+    y_train = df_w["niveau_nappe_eau"]
+    model, _ = train(X_train, y_train, optimize=False)
 
-    # 3. Train
-    X = df_ml[["mois", "lag_1", "lag_2", "lag_3", "lag_12", "moyenne_3m", "moyenne_6m"]]
-    y = df_ml["niveau_nappe_eau"]
-    model, _ = train(X, y, optimize=False)
+    # # 4. Prévision — 13 prochaines semaines (~90 jours)
+    # X_future = X_train.tail(13).values
+    # y_pred = model.predict(X_future)
+    # last_date = df_w.index[-1]
+    # forecast_index = pd.date_range(start=last_date, periods=14, freq="W")[1:]
+    # forecast = pd.Series(y_pred, index=forecast_index)
 
-    # 4. Prévision
-    X_future = df_ml[["mois", "lag_1", "lag_2", "lag_3", "lag_12", "moyenne_3m", "moyenne_6m"]].tail(3).values
-    y_pred = model.predict(X_future)
-    last_date = df_ml.index[-1]
-    forecast_index = pd.date_range(start=last_date, periods=4, freq="ME")[1:]
-    forecast = pd.Series(y_pred, index=forecast_index)
+    # /!\ peut etre probleme de data leakage avec pred_future ?
+    # 4. Prévision autorégressive — 13 semaines futures
+    forecast = pred_future(model, df_w, n_weeks=13)
 
     return {
         "bss_id": bss_id,
