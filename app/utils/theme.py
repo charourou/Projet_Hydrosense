@@ -34,6 +34,7 @@ DESIGN_TOKENS = {
     "radius_pill":    "999px",
     # Couleur ligne historique / prédiction
     "color_line":     "#2484e5",
+    "color_line_pred":     "#95d2f8",
     # Couleur texte section titles
     "color_section":  "#475569",
     # Fond selectbox pill
