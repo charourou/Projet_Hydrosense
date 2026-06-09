@@ -36,8 +36,9 @@ DEPT_CARTE = "79"
 st.markdown("""
 <style>
     /* ── Reset Streamlit layout ── */
+    html, body                { overflow: hidden !important; }
     .main > div:first-child  { padding-top: 0 !important; padding-left: 0 !important; padding-right: 0 !important; }
-    .block-container         { padding: 0 !important; max-width: 100% !important; }
+    .block-container         { padding: 0 !important; max-width: 100% !important; overflow: hidden !important; }
     header[data-testid="stHeader"] { background: transparent !important; }
 
     /* ── Folium map plein écran ── */
@@ -179,6 +180,7 @@ st.session_state["selected_bss"] = df_catalog.loc[
 
 DATA_CODE_PIEZO = df_catalog.loc[df_catalog["label"] == selected_label, "bss_id"].iloc[0]
 nom_commune     = df_catalog.loc[df_catalog["label"] == selected_label, "nom_commune"].iloc[0] or "?"
+nom_departement = df_catalog.loc[df_catalog["label"] == selected_label, "nom_departement"].iloc[0] or "?"
 dept            = df_catalog.loc[df_catalog["label"] == selected_label, "code_departement"].iloc[0] or "?"
 
 _seuils: dict[str, float] = load_seuils_interm(DATA_CODE_PIEZO) or _SEUILS_FALLBACK
@@ -255,34 +257,6 @@ for _, row in df_map_dept.iterrows():
     _, mc       = _get_statut(mock_val, s)
     is_selected = (row["bss_id"] == DATA_CODE_PIEZO)
 
-    # Pré-calcul hors f-string (Python 3.10 n'accepte pas les backslashes dans les f-strings)
-    _bss      = row["bss_id"]
-    _commune  = row["nom_commune"]
-    _items = [
-        ("Normal",    "< " + f"{s['p20']:.1f}" + " m"),
-        ("Vigilance", f"{s['p20']:.1f}" + " – " + f"{s['p10']:.1f}" + " m"),
-        ("Alerte",    f"{s['p10']:.1f}" + " – " + f"{s['p5']:.1f}"  + " m"),
-        ("Crise",     "> " + f"{s['p5']:.1f}"  + " m"),
-    ]
-    _rows = "".join(
-        "<div style='display:flex;align-items:center;gap:10px;margin-bottom:6px;font-size:12px;'>"
-        "<div style='width:4px;height:16px;border-radius:2px;background:"
-        + SEUIL_COLORS[n]["fg"] +
-        ";flex-shrink:0;'></div>"
-        "<span style='flex:1;color:#374151;font-weight:500;'>" + n + "</span>"
-        "<span style='color:#6b7280;font-family:monospace;'>" + lim + "</span></div>"
-        for n, lim in _items
-    )
-    popup_html = (
-        "<div style='font-family:system-ui,sans-serif;padding:4px;min-width:220px;'>"
-        "<div style='font-size:11px;font-weight:600;color:#1e293b;margin-bottom:6px;'>"
-        + _bss + " · " + _commune + "</div>"
-        "<div style='font-size:10px;text-transform:uppercase;letter-spacing:1px;"
-        "color:#9ca3af;margin-bottom:8px;'>SEUILS RÉGLEMENTAIRES</div>"
-        + _rows +
-        "</div>"
-    )
-
     if is_selected:
         folium.CircleMarker(
             location=[row["y"], row["x"]], radius=20,
@@ -293,7 +267,6 @@ for _, row in df_map_dept.iterrows():
             location=[row["y"], row["x"]], radius=10,
             color=mc["fg"], fill=True, fill_color=mc["fg"],
             fill_opacity=0.85, weight=2,
-            popup=folium.Popup(folium.IFrame(popup_html, width=260, height=180), max_width=280),
             tooltip=f"{row['bss_id']} — {row['nom_commune']}",
         ).add_to(m)
     else:
@@ -301,7 +274,6 @@ for _, row in df_map_dept.iterrows():
             location=[row["y"], row["x"]], radius=7,
             color=mc["fg"], fill=True, fill_color=mc["fg"],
             fill_opacity=0.55, weight=1.5,
-            popup=folium.Popup(folium.IFrame(popup_html, width=260, height=180), max_width=280),
             tooltip=f"{row['bss_id']} — {row['nom_commune']}",
         ).add_to(m)
 
@@ -425,7 +397,7 @@ panel_html = (
     '<span style="color:#1e293b;font-weight:600;">' + nom_commune + '</span></div>'
     '<div class="chips-row"><span class="chip active">' + nom_commune + '</span></div>'
     '<div class="meta-row">'
-    '<span class="meta-tag">' + dept + ' · ' + nom_commune + '</span>'
+    '<span class="meta-tag">' + dept + ' · ' + nom_departement + '</span>'
     '<span class="meta-tag">Nappe libre</span>'
     '<span class="meta-tag">Maj. 3 juin</span>'
     '</div></div>'
