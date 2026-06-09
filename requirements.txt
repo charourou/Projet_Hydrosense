@@ -63,7 +63,6 @@ holidays
 httpcore
 httptools
 httpx
-hydrosense
 idna
 iniconfig
 ipdb
