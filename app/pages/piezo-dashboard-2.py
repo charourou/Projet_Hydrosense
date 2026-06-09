@@ -16,6 +16,7 @@ import streamlit as st
 from streamlit_folium import st_folium
 
 from utils.api_client import (
+    API_URL,
     load_catalog_interm,
     load_catalog_map_dept,
     load_historique,
@@ -202,7 +203,7 @@ def get_historique(bss_id: str) -> pd.DataFrame:
 
 @st.cache_data
 def get_forecast(bss_id: str) -> dict:
-    response = requests.get("http://localhost:8000/predict", params={"bss_id": bss_id})
+    response = requests.get(f"{API_URL}/predict", params={"bss_id": bss_id})
     response.raise_for_status()
     return response.json()
 
