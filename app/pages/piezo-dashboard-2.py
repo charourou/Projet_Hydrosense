@@ -11,9 +11,12 @@ Fixes v3 :
 import folium
 import numpy as np
 import pandas as pd
+import requests
 import streamlit as st
 from streamlit_folium import st_folium
 
+from hydrosense.database.bigquery import load_piezo_bq
+from hydrosense.preprocess.cleaning import clean_piezo
 from utils.bigquery import (
     load_catalog_interm,
     load_catalog_map_dept,
@@ -42,12 +45,12 @@ st.markdown("""
 
     /* ── Glass card base ── */
     .glass-card {
-        background: rgba(255,255,255,0.90);
-        backdrop-filter: blur(18px) saturate(180%);
-        -webkit-backdrop-filter: blur(18px) saturate(180%);
-        border-radius: 18px;
-        border: 1px solid rgba(255,255,255,0.65);
-        box-shadow: 0 8px 32px rgba(0,0,0,0.11), 0 2px 6px rgba(0,0,0,0.05);
+        background: rgba(255,255,255,0.55);
+        backdrop-filter: blur(30px) saturate(1.5);
+        -webkit-backdrop-filter: blur(30px) saturate(1.5);
+        border-radius: 28px;
+        border: 0.666667px solid rgba(255,255,255,0.55);
+        box-shadow: rgba(28,50,84,0.28) 0px 24px 60px -12px;
         padding: 16px 20px;
     }
 
@@ -78,13 +81,13 @@ st.markdown("""
     .meta-tag   { padding: 3px 10px; border-radius: 6px; font-size: 0.71rem; color: #64748b; background: #f1f5f9; }
 
     /* Statut card */
-    .statut-badge { display: inline-flex; align-items: center; gap: 7px;
-                    padding: 6px 14px; border-radius: 999px; font-size: 0.88rem; font-weight: 700; }
-    .statut-dot   { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-    .statut-hint  { font-size: 0.71rem; color: #94a3b8; margin-top: 5px; }
-    .main-value      { font-size: 3.2rem; font-weight: 800; color: #0f172a; line-height: 1; letter-spacing: -2px; margin: 6px 0 2px; }
-    .main-value-unit { font-size: 1.3rem; font-weight: 400; color: #64748b; letter-spacing: 0; }
-    .main-value-sub  { font-size: 0.76rem; color: #94a3b8; }
+    .statut-badge { display: inline-flex; align-items: center; gap: 6px;
+                    padding: 4px 10px; border-radius: 999px; font-size: 0.80rem; font-weight: 700; }
+    .statut-dot   { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .statut-hint  { font-size: 0.68rem; color: #94a3b8; margin-top: 3px; }
+    .main-value      { font-size: 2.0rem; font-weight: 800; color: #0f172a; line-height: 1; letter-spacing: -1px; margin: 4px 0 1px; }
+    .main-value-unit { font-size: 1.0rem; font-weight: 400; color: #64748b; letter-spacing: 0; }
+    .main-value-sub  { font-size: 0.70rem; color: #94a3b8; }
 
     /* Chart card */
     .chart-title { font-size: 0.82rem; font-weight: 600; color: #475569; margin-bottom: 4px; }
@@ -111,7 +114,7 @@ st.markdown("""
 
     /* ── KPI row ── */
     .kpi-row {
-        position: fixed; bottom: 20px; left: 376px; right: 20px;
+        position: fixed; bottom: 20px; left: 500px; right: 20px;
         display: flex; gap: 10px;
         pointer-events: all; z-index: 1001;
     }
@@ -124,6 +127,10 @@ st.markdown("""
         box-shadow: 0 4px 16px rgba(0,0,0,0.09);
         padding: 14px 18px;
     }
+    /* Card groupée : 3 métriques côte à côte sans padding propre */
+    .kpi-card.kpi-grouped { padding: 0; overflow: hidden; }
+    .kpi-item { flex: 1; padding: 14px 18px; }
+    .kpi-sep  { width: 1px; background: rgba(0,0,0,0.07); margin: 10px 0; flex-shrink: 0; }
     .kpi-val  { font-size: 1.55rem; font-weight: 800; color: #0f172a; letter-spacing: -0.5px; line-height: 1.1; }
     .kpi-unit { font-size: 0.88rem; font-weight: 400; color: #64748b; }
     .kpi-lbl  { font-size: 0.69rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
@@ -187,17 +194,45 @@ def _get_statut(val: float, seuils: dict) -> tuple[str, dict]:
     elif val <= seuils["p95"]: return "Modérément haut", SEUIL_COLORS["Modérément haut"]
     else:                      return "Très haut",       SEUIL_COLORS["Très haut"]
 
-# Données mock (remplacer par vraies données en prod)
-_today      = pd.Timestamp("2026-06-03")
-_dates_hist = pd.date_range(end=_today, periods=60, freq="D")
-np.random.seed(42)
-_vals_hist  = 12.4 + np.cumsum(np.random.randn(60) * 0.05)
-_dates_pred = pd.date_range(start=_today + pd.Timedelta(days=1), periods=90, freq="D")
-_vals_pred  = _vals_hist[-1] + np.cumsum(np.random.randn(90) * 0.04) + 0.3
+@st.cache_data
+def get_historique(bss_id: str) -> pd.DataFrame:
+    df_raw = load_piezo_bq(bss_id)
+    return clean_piezo(df_raw)
 
-derniere_val      = float(_vals_hist[-1])
-tendance_7j       = float(_vals_hist[-1] - _vals_hist[-8])
-jours_avant_seuil = 14
+
+@st.cache_data
+def get_forecast(bss_id: str) -> dict:
+    response = requests.get("http://localhost:8000/predict", params={"bss_id": bss_id})
+    response.raise_for_status()
+    return response.json()
+
+
+with st.spinner("Chargement des données historiques..."):
+    df_clean = get_historique(DATA_CODE_PIEZO)
+
+with st.spinner("Chargement de la prévision via l'API..."):
+    result = get_forecast(DATA_CODE_PIEZO)
+
+deux_ans = pd.Timestamp.today() - pd.Timedelta(days=365 * 2)
+df_hist_filtre = df_clean[df_clean["date_mesure"] >= deux_ans]
+
+df_pred_val = pd.DataFrame(result["prévision"])
+df_pred_val["date_mesure"]      = pd.to_datetime(df_pred_val["date"])
+df_pred_val["niveau_nappe_eau"] = df_pred_val["niveau"]
+
+_today      = df_hist_filtre["date_mesure"].max()
+_dates_hist = df_hist_filtre["date_mesure"].values
+_vals_hist  = df_hist_filtre["niveau_nappe_eau"].values
+_dates_pred = df_pred_val["date_mesure"].values
+_vals_pred  = df_pred_val["niveau_nappe_eau"].values
+
+derniere_val  = float(_vals_hist[-1])
+valeur_7j_avant = df_clean[
+    df_clean["date_mesure"] <= df_clean["date_mesure"].max() - pd.Timedelta(days=7)
+]["niveau_nappe_eau"].iloc[-1]
+tendance_7j    = derniere_val - float(valeur_7j_avant)
+moyenne_pred   = float(np.mean(_vals_pred))
+variation_prev = moyenne_pred - derniere_val
 
 statut_nom, statut_colors = _get_statut(derniere_val, _seuils)
 
@@ -205,6 +240,13 @@ statut_nom, statut_colors = _get_statut(derniere_val, _seuils)
 # CARTE FOLIUM
 # ══════════════════════════════════════════════════════════════════════════════
 m = folium.Map(location=[46.4, -0.3], zoom_start=8, tiles="CartoDB Positron", prefer_canvas=True)
+
+# Cacher tous les contrôles Leaflet (zoom + attribution)
+m.get_root().html.add_child(folium.Element("""
+<style>
+.leaflet-control-container { display: none !important; }
+</style>
+"""))
 
 rng = np.random.default_rng(0)
 for _, row in df_map_dept.iterrows():
@@ -287,8 +329,9 @@ if _clicked_tooltip and " — " in _clicked_tooltip:
 # ══════════════════════════════════════════════════════════════════════════════
 # MINI GRAPHIQUE ALTAIR
 # ══════════════════════════════════════════════════════════════════════════════
-df_h = pd.DataFrame({"date": _dates_hist,      "val": _vals_hist,   "t": "H"})
-df_p = pd.DataFrame({"date": _dates_pred[:30], "val": _vals_pred[:30], "t": "P"})
+_pred_n = min(30, len(_dates_pred))
+df_h = pd.DataFrame({"date": _dates_hist,           "val": _vals_hist,          "t": "H"})
+df_p = pd.DataFrame({"date": _dates_pred[:_pred_n], "val": _vals_pred[:_pred_n],"t": "P"})
 
 y_lo = min(_vals_hist.min(), _seuils["p5"])  - 0.3
 y_hi = max(_vals_hist.max(), _seuils["p95"]) + 0.3
@@ -303,7 +346,7 @@ import matplotlib.patches as _mpatches
 from io import BytesIO as _BytesIO
 import base64 as _b64
 
-_fig, _ax = _plt.subplots(figsize=(3.4, 1.2))
+_fig, _ax = _plt.subplots(figsize=(4.6, 1.2))
 _fig.patch.set_alpha(0)
 _ax.set_facecolor("none")
 
@@ -315,14 +358,14 @@ _seuil_bands = [
     (_seuils["p85"], _seuils["p95"], SEUIL_COLORS["Modérément haut"]["bg"]),
 ]
 _x_lo = _dates_hist[0]
-_x_hi = _dates_pred[29]
+_x_hi = _dates_pred[min(29, len(_dates_pred) - 1)]
 for _yb0, _yb1, _bc in _seuil_bands:
     _ax.fill_between([_x_lo, _x_hi], [_yb0, _yb0], [_yb1, _yb1],
                      color=_bc, alpha=0.6, linewidth=0)
 
 # Courbes
 _ax.plot(_dates_hist, _vals_hist, color="#2484e5", linewidth=1.8, solid_capstyle="round")
-_ax.plot(_dates_pred[:30], _vals_pred[:30], color="#2484e5", linewidth=1.8,
+_ax.plot(_dates_pred[:_pred_n], _vals_pred[:_pred_n], color="#2484e5", linewidth=1.8,
          linestyle=(0, (5, 3)), solid_capstyle="round")
 _ax.plot([_today], [derniere_val], "o", color="#2484e5", markersize=4, zorder=5)
 
@@ -338,10 +381,34 @@ _svg_str = _buf.getvalue().decode("utf-8")
 # Garder uniquement le tag <svg ...> (retirer le prologue XML)
 _svg_clean = _svg_str[_svg_str.find("<svg"):]
 
+# ── Précipitations bars (calculé ici car réutilisé dans panel_html) ───────────
+precip_7j   = [2, 5, 11, 8, 3, 0, 0]
+days_labels = ["LUN", "MAR", "MER", "JEU", "VEN", "SAM", "DIM"]
+_max_p      = max(precip_7j) or 1
+bars_html   = ""
+for _p, _d in zip(precip_7j, days_labels):
+    _pbg = "#2484e5" if _p > 0 else "#e2e8f0"
+    _ph  = int(_p / _max_p * 36) + 2
+    bars_html += (
+        "<div style='display:flex;flex-direction:column;align-items:center;gap:3px;'>"
+        "<div style='width:6px;height:" + str(_ph) + "px;border-radius:3px;background:" + _pbg + ";'></div>"
+        "<span style='font-size:0.58rem;color:#94a3b8;'>" + str(_p) + "</span>"
+        "<span style='font-size:0.58rem;color:#cbd5e1;'>" + _d + "</span></div>"
+    )
+
 # ── Panels HTML ───────────────────────────────────────────────────────────────
 _bg_statut  = statut_colors["bg"]
 _fg_statut  = statut_colors["fg"]
 _val_str    = f"{derniere_val:.1f}"
+_t_arrow = "↓" if tendance_7j < 0 else "↑"
+_t_color = "#d9534f"
+_t_bg    = "#fce4d6"
+_p_arrow = "↓" if variation_prev < 0 else "↑"
+_p_color = "#2ca02c"
+_p_bg    = "#e2f0d9"
+_t_val   = f"{tendance_7j:+.2f}"
+_p_val   = f"{moyenne_pred:.2f}"
+_p_delta = f"{variation_prev:+.2f}"
 
 panel_html = (
     '<div class="panel-left">'
@@ -363,11 +430,10 @@ panel_html = (
     '<span class="meta-tag">Maj. 3 juin</span>'
     '</div></div>'
 
-    # 2. Placeholder selectbox
-    '<div style="height:44px;"></div>'
-
-    # 3. Statut + valeur
-    '<div class="glass-card">'
+    # 3. Statut + valeur + KPI (tendance & prévision) à droite
+    '<div class="glass-card" style="padding:10px 14px;display:flex;align-items:stretch;gap:0;">'
+    # — colonne gauche : statut actuel
+    '<div style="flex:1;min-width:0;">'
     '<span class="statut-badge" style="background:' + _bg_statut + ';color:' + _fg_statut + ';">'
     '<span class="statut-dot" style="background:' + _fg_statut + ';"></span>'
     + statut_nom +
@@ -376,53 +442,52 @@ panel_html = (
     '<div class="main-value">' + _val_str + '<span class="main-value-unit"> m</span></div>'
     '<div class="main-value-sub">Profondeur actuelle · sous le sol</div>'
     '</div>'
-
-    # 4. Card graphique — SVG matplotlib inline
-    '<div class="glass-card" style="padding:14px 16px 8px;">'
-    '<div class="chart-title">Profondeur de nappe</div>'
-    '<div style="margin:4px -4px 0; line-height:0;">' + _svg_clean + '</div>'
-    '<div class="chart-legend" style="margin-top:6px;">'
-    '<span><span class="leg-line"></span>Historique</span>'
-    '<span style="color:#94a3b8;margin-left:8px;">- - Prévision 90 j</span>'
-    '</div></div>'
+    # — séparateur vertical
+    '<div style="width:1px;background:rgba(0,0,0,0.07);margin:2px 12px;flex-shrink:0;"></div>'
+    # — colonne droite : deux KPI empilés
+    '<div style="display:flex;flex-direction:column;justify-content:space-around;min-width:110px;">'
+    # tendance
+    '<div>'
+    '<div style="font-size:0.62rem;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px;">Tendance 7 J</div>'
+    '<div style="font-size:1.15rem;font-weight:800;color:' + _t_color + ';letter-spacing:-0.3px;line-height:1.1;">' + _t_val + '<span style="font-size:0.78rem;font-weight:400;color:#64748b;"> m</span></div>'
+    '<span style="font-size:0.66rem;font-weight:600;color:' + _t_color + ';background:' + _t_bg + ';padding:2px 7px;border-radius:999px;">' + _t_arrow + ' ' + _t_val + '</span>'
+    '</div>'
+    # séparateur horizontal
+    '<div style="height:1px;background:rgba(0,0,0,0.05);margin:4px 0;"></div>'
+    # prévision
+    '<div>'
+    '<div style="font-size:0.62rem;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px;">Prévision 90 J</div>'
+    '<div style="font-size:1.15rem;font-weight:800;color:#0f172a;letter-spacing:-0.3px;line-height:1.1;">' + _p_val + '<span style="font-size:0.78rem;font-weight:400;color:#64748b;"> m</span></div>'
+    '<span style="font-size:0.66rem;font-weight:600;color:' + _p_color + ';background:' + _p_bg + ';padding:2px 7px;border-radius:999px;">' + _p_arrow + ' ' + _p_delta + ' m</span>'
+    '</div>'
+    '</div>'
+    '</div>'
 
     '</div>'  # .panel-left
 )
 
 st.markdown(panel_html, unsafe_allow_html=True)
 
+# ── Chart card — fixed, 460px, sort du panel-left ────────────────────────────
+st.markdown(
+    "<div style='position:fixed;bottom:20px;left:16px;width:460px;z-index:1001;"
+    "background:rgba(255,255,255,0.55);backdrop-filter:blur(30px) saturate(1.5);"
+    "-webkit-backdrop-filter:blur(30px) saturate(1.5);"
+    "border-radius:28px;border:0.667px solid rgba(255,255,255,0.55);"
+    "box-shadow:rgba(28,50,84,0.28) 0px 24px 60px -12px;"
+    "padding:14px 16px 10px;pointer-events:all;'>"
+    "<div class='chart-title'>Profondeur de nappe</div>"
+    "<div style='margin:4px -4px 0;line-height:0;'>" + _svg_clean + "</div>"
+    "<div class='chart-legend' style='margin-top:6px;'>"
+    "<span><span class='leg-line'></span>Historique</span>"
+    "<span style='color:#94a3b8;margin-left:8px;'>- - Prévision 90 j</span>"
+    "</div></div>",
+    unsafe_allow_html=True,)
 
 # ── KPI cards ─────────────────────────────────────────────────────────────────
-precip_7j   = [2, 5, 11, 8, 3, 0, 0]
-days_labels = ["LUN", "MAR", "MER", "JEU", "VEN", "SAM", "DIM"]
-max_p       = max(precip_7j) or 1
-bars_html = ""
-for p, d in zip(precip_7j, days_labels):
-    _bg = "#2484e5" if p > 0 else "#e2e8f0"
-    _h  = int(p / max_p * 36) + 2
-    bars_html += (
-        "<div style='display:flex;flex-direction:column;align-items:center;gap:3px;'>"
-        "<div style='width:6px;height:" + str(_h) + "px;border-radius:3px;"
-        "background:" + _bg + ";'></div>"
-        "<span style='font-size:0.58rem;color:#94a3b8;'>" + str(p) + "</span>"
-        "<span style='font-size:0.58rem;color:#cbd5e1;'>" + d + "</span></div>"
-    )
-
 st.markdown(f"""
 <div class="kpi-row">
-  <div class="kpi-card">
-    <div class="kpi-val">↓ {abs(tendance_7j):.1f}<span class="kpi-unit"> m</span></div>
-    <div class="kpi-lbl">Tendance / mois</div>
-  </div>
-  <div class="kpi-card">
-    <div class="kpi-val" style="color:#2484e5;">J - {jours_avant_seuil}</div>
-    <div class="kpi-lbl">Avant seuil</div>
-  </div>
-  <div class="kpi-card">
-    <div class="kpi-val" style="color:#2484e5;">82<span class="kpi-unit"> %</span></div>
-    <div class="kpi-lbl">Confiance modèle</div>
-  </div>
-  <div class="kpi-card" style="flex:1.4;">
+  <div class="kpi-card" style="flex:inherit;">
     <div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:7px;'>
       <span style='font-size:0.69rem;text-transform:uppercase;letter-spacing:0.5px;color:#94a3b8;'>PRÉCIP. · 7 J</span>
       <span style='font-size:0.69rem;color:#94a3b8;'>mm</span>
@@ -431,3 +496,45 @@ st.markdown(f"""
   </div>
 </div>
 """, unsafe_allow_html=True)
+
+
+# ── Seuils réglementaires (card fixe bas-droite, au-dessus de la KPI row) ─────
+_seuils_display = [
+    ("Normal",    f"< {_seuils['p20']:.1f} m",                               SEUIL_COLORS["Normal"]),
+    ("Vigilance", f"{_seuils['p20']:.1f} – {_seuils['p10']:.1f} m",          SEUIL_COLORS["Vigilance"]),
+    ("Alerte",    f"{_seuils['p10']:.1f} – {_seuils['p5']:.1f} m",           SEUIL_COLORS["Alerte"]),
+    ("Crise",     f"> {_seuils['p5']:.1f} m",                                 SEUIL_COLORS["Crise"]),
+]
+_seuils_rows_html = ""
+for _nom, _lim, _col in _seuils_display:
+    _is_actif = (statut_nom == _nom)
+    _dot_style = (
+        f"width:10px;height:10px;border-radius:50%;background:{_col['fg']};flex-shrink:0;"
+        + (f"box-shadow:0 0 0 4px {_col['bg']};" if _is_actif else "opacity:0.55;")
+    )
+    _seuils_rows_html += (
+        f"<div style='display:flex;align-items:center;gap:10px;padding:7px 0;"
+        f"border-bottom:1px solid rgba(0,0,0,0.04);'>"
+        f"<div style='{_dot_style}'></div>"
+        f"<span style='flex:1;font-size:0.83rem;font-weight:{'600' if _is_actif else '400'};"
+        f"color:{'#1e293b' if _is_actif else '#374151'};'>{_nom}</span>"
+        f"<span style='font-size:0.78rem;color:#6b7280;font-family:monospace;'>{_lim}</span>"
+        f"</div>"
+    )
+
+st.markdown(f"""
+<div style='position:fixed;right:20px;bottom:20px;width:260px;z-index:1001;
+            background:rgba(255,255,255,0.55);backdrop-filter:blur(30px) saturate(1.5);
+            -webkit-backdrop-filter:blur(30px) saturate(1.5);
+            border-radius:28px;border:0.667px solid rgba(255,255,255,0.55);
+            box-shadow:rgba(28,50,84,0.28) 0px 24px 60px -12px;
+            padding:16px 20px;pointer-events:all;'>
+  <div style='font-size:0.65rem;font-weight:700;text-transform:uppercase;
+              letter-spacing:1px;color:#9ca3af;margin-bottom:8px;'>
+    SEUILS RÉGLEMENTAIRES
+  </div>
+  {_seuils_rows_html}
+</div>
+""", unsafe_allow_html=True)
+
+
