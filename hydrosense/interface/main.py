@@ -216,8 +216,8 @@ def evaluate_deeper(X_df: pd.DataFrame, y_df: pd.Series) -> Tuple[pd.DataFrame, 
         # y_pred_val = pd.Series(model_fold.predict(X_val_fold.values), index=y_val_fold.index)
         # y_pred_train = pd.Series(model_fold.predict(X_train_fold.values), index=y_train_fold.index)
 
-        metrics_val = evaluate_model(model_fold, X_val_fold.values, y_val_fold.values)
-        metrics_train = evaluate_model(model_fold, X_train_fold.values, y_train_fold.values)
+        metrics_val = evaluate_model(model_fold, X_val_fold.values, y_val_fold.values, y_train=y_train_fold.values)
+        metrics_train = evaluate_model(model_fold, X_train_fold.values, y_train_fold.values, y_train=y_train_fold.values)
 
         print(f"  Train R²: {metrics_train['r2']:.3f} | Val R²: {metrics_val['r2']:.3f}")
         print(f"  Train MAE: {metrics_train['mae']:.3f} | Val MAE: {metrics_val['mae']:.3f}")
@@ -225,7 +225,7 @@ def evaluate_deeper(X_df: pd.DataFrame, y_df: pd.Series) -> Tuple[pd.DataFrame, 
         metrics_per_fold.append({
             'fold': i + 1, 'val_start': y_val_fold.index.min(), 'val_end': y_val_fold.index.max(),
             'r2_train': metrics_train['r2'], 'mae_train': metrics_train['mae'], 'rmse_train': metrics_train['rmse'], 'max_error_train': metrics_train['max_error'],
-            'r2_val': metrics_val['r2'], 'mae_val': metrics_val['mae'], 'rmse_val': metrics_val['rmse'], 'max_error_val': metrics_val['max_error']
+            'r2_val': metrics_val['r2'], 'mae_val': metrics_val['mae'], 'rmse_val': metrics_val['rmse'], 'max_error_val': metrics_val['max_error'], 'rmsse_val': metrics_val['rmsse']
         })
 
         # # Store predictions for visualization
@@ -235,7 +235,7 @@ def evaluate_deeper(X_df: pd.DataFrame, y_df: pd.Series) -> Tuple[pd.DataFrame, 
     metrics_df = pd.DataFrame(metrics_per_fold)
     print("\n--- Cross-Validation Summary ---")
     print("Average metrics on validation sets:")
-    print(metrics_df[['r2_val', 'mae_val', 'rmse_val', 'max_error_val']].mean().round(3))
+    print(metrics_df[['r2_val', 'mae_val', 'rmse_val', 'max_error_val', 'rmsse_val']].mean().round(3))
 
     print("\n✅ evaluate_deeper() done \n")
     return metrics_df, all_predictions
@@ -280,6 +280,11 @@ if __name__ == "__main__":
     # load from big query
     df = clean_piezo(load_piezo_bq(DATA_CODE_PIEZO))
 
+    if params.DATE_COL in df.columns:
+        df[params.DATE_COL] = pd.to_datetime(df[params.DATE_COL])
+        df.set_index(params.DATE_COL, inplace=True)
+    df = df.sort_index()
+
     df_ml = preprocess(df)  # OR preprocess_week ???
     X_train_df, X_test_df, y_train_df, y_test_df = split_data(df_ml)
 
@@ -312,7 +317,7 @@ if __name__ == "__main__":
     model, history = train(X_train_df, y_train_df, optimize=True)
 
     # 3. Evaluate — même modèle, pas de rechargement
-    metrics = evaluate(model, X_test_df.values, y_test_df.values)
+    metrics = evaluate(model, X_test_df.values, y_test_df.values, y_train_df.values)
 
     # 3b. Deeper Evaluation with Cross-Validation on the training set
     print(Fore.CYAN + "\n--- Évaluation approfondie par Cross-Validation ---" + Style.RESET_ALL)
