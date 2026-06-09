@@ -1,6 +1,3 @@
-import time
-
-
 import numpy as np
 import pandas as pd
 
@@ -8,6 +5,7 @@ from pathlib import Path
 from colorama import Fore, Style
 
 from hydrosense.ml_logic.model import initialize_model, optimize_model, train_model, evaluate_model, predict_model
+from hydrosense.ml_logic.folding import get_folds
 
 from hydrosense.database.bigquery import load_piezo_bq
 from hydrosense.preprocess.cleaning import clean_piezo, clean_piezo2
@@ -21,9 +19,8 @@ from hydrosense import params
 # ══════════════════════════════════════════════════════════════════════════════
 
 DATA_PATH    = Path("data/piezo_bourdet_clean.csv")
-#DATA_CODE_PIEZO = "BSS001QHYH"
-DATA_CODE_PIEZO = "BSS001QTKG"
-
+DATA_CODE_PIEZO = "BSS001QHYH"
+TARGET_COL   = "niveau_nappe_eau"
 DATE_COL     = "date_mesure"
 #FEATURE_COLS = ["mois", "lag_1", "lag_2", "lag_3", "lag_12", "moyenne_3m", "moyenne_6m"]
 #FEATURE_COLS = ["semaine", "lag_1", "lag_2", "lag_3", "lag_12", "moyenne_3m", "moyenne_6m"]
@@ -32,9 +29,11 @@ FEATURE_COLS = ["semaine_sin","semaine_cos", "lag_1", "lag_2", "lag_3","lag_4" ,
 #FEATURE_COLS = ["semaine_sin","semaine_cos", "lag_1","lag_4" ,"lag_52", "moyenne_3w", "moyenne_6w","RR_lag_1","RR_lag_2","RR_moy_4w"]
 
 # Split : 3 derniers mois en test (Mars → Mai 2026)
-TRAIN_END  = "2026-02-28"
-#TEST_START = "2026-03-01" # EVALUATION_START_DATE dans params
-TEST_END   = "2026-05-31"
+# EN DUR --- OUILLE OUILLE
+
+TRAIN_END  = "2025-02-28"
+TEST_START = "2025-03-01"
+TEST_END   = "2025-05-31"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -47,7 +46,7 @@ def load_data(path: Path = DATA_PATH) -> pd.DataFrame:
     """
     print(Fore.MAGENTA + "\n⭐️ Use case: load_data" + Style.RESET_ALL)
 
-    df = pd.read_csv(path, parse_dates=[DATE_COL])
+    df = pd.read_csv(path, parse_dates=[DATE_COL], sep = ';')
 
     if DATE_COL in df.columns:
         df.set_index(DATE_COL, inplace=True)
@@ -111,20 +110,20 @@ def split_data(df_ml: pd.DataFrame):
     print(FEATURE_COLS)
     y = df_ml[params.TARGET_COL]
 
-    X_train = X.loc[:TRAIN_END].values
-    X_test  = X.loc[params.EVALUATION_START_DATE:TEST_END].values
-    y_train = y.loc[:TRAIN_END].values
-    y_test  = y.loc[params.EVALUATION_START_DATE:TEST_END].values
+    X_train_df = X.loc[:TRAIN_END]
+    X_test_df  = X.loc[TEST_START:TEST_END]
+    y_train_df = y.loc[:TRAIN_END]
+    y_test_df  = y.loc[TEST_START:TEST_END]
 
-    print(f"✅ split_data() done — Train : {len(X_train)} semaines | Test : {len(X_test)} semaines\n")
-    return X_train, X_test, y_train, y_test
+    print(f"✅ split_data() done — Train : {len(X_train_df)} mois | Test : {len(X_test_df)} mois\n")
+    return X_train_df, X_test_df, y_train_df, y_test_df
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 4. TRAIN
 # ══════════════════════════════════════════════════════════════════════════════
 
-def train(X_train, y_train, optimize: bool = True):
+def train(X_train_df: pd.DataFrame, y_train_df: pd.Series, optimize: bool = True):
     """
     Optimise et entraîne le modèle XGBoost.
 
@@ -140,15 +139,20 @@ def train(X_train, y_train, optimize: bool = True):
     print(Fore.MAGENTA + "\n⭐️ Use case: train" + Style.RESET_ALL)
 
     if optimize:
-        model, best_params = optimize_model(X_train, y_train, cv=3)
+        model, best_params = optimize_model(
+            X_train_df.values, # Les valeurs NumPy pour l'entraînement du modèle
+            y_train_df.values, # Les valeurs NumPy pour l'entraînement du modèle
+            X_train_df_for_folds=X_train_df, # Le DataFrame pour la génération des folds
+            # date_column_name=DATE_COL,  # Plus nécessaire car optimize_model ne le passe plus à get_folds
+            n_splits_cv=3,
+            val_months_duration=3 # Durée de la validation en mois pour la CV
+        )
         print(Fore.BLUE + f"\nBest params: {best_params}" + Style.RESET_ALL)
     else:
         #on lui passe des hyperparametres de qualité
         model = initialize_model(n_estimators= 1000,learning_rate= 0.1,max_depth=2,subsample=0.8,colsample_bytree =0.6, min_child_weight=5,random_state = 42)
 
-        #model = initialize_model()
-
-    model, history = train_model(model, X_train, y_train)
+    model, history = train_model(model, X_train_df.values, y_train_df.values)
 
     print("✅ train() done \n")
     return model, history
@@ -208,29 +212,46 @@ def pred(model, df_ml: pd.DataFrame) -> pd.Series:
 # ══════════════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
-    start_time = time.time()
 
+    # 1. Données — une seule fois
+    #df    = load_data() # du CSV
     # load from big query
     #df = clean_piezo(load_piezo_bq(DATA_CODE_PIEZO))
     df = clean_piezo2(load_piezo_bq(DATA_CODE_PIEZO))
 
-    df_ml = preprocess_week(df)
+    df_ml = preprocess(df)  # OR preprocess_week ???
+    X_train_df, X_test_df, y_train_df, y_test_df = split_data(df_ml)
 
-    X_train, X_test, y_train, y_test = split_data(df_ml)
+    # --- Zone de test pour visualiser les splits de cross-validation ---
+    print(Fore.CYAN + "\n--- Visualisation des splits de cross-validation annuels ---" + Style.RESET_ALL)
+    try:
+        # get_folds attend un DataFrame avec la colonne de dates.
+        test_splits = get_folds(
+            # Passe directement le DatetimeIndex de X_train_df
+            dates_series=X_train_df.index,
+            n_splits=3, # Nombre de splits à visualiser
+            min_train_years=3,
+            val_months_duration=3
+        )
+        for i, (train_idx, val_idx) in enumerate(test_splits):
+            # Utilise X_train_df pour récupérer les dates réelles pour la visualisation
+            train_period = X_train_df.iloc[train_idx].index
+            val_period = X_train_df.iloc[val_idx].index
+            print(f"  Split {i+1}:")
+            print(f"    Train: {train_period.min().strftime('%Y-%m')} à {train_period.max().strftime('%Y-%m')} ({len(train_idx)} samples)")
+            print(f"    Val:   {val_period.min().strftime('%Y-%m')} à {val_period.max().strftime('%Y-%m')} ({len(val_idx)} samples)")
+            # Assertions pour vérifier l'absence de fuite temporelle et l'ordre chronologique
+            assert train_period.max() < val_period.min(), f"Fuite temporelle détectée dans Split {i+1}!" # Vérifie l'ordre chronologique
+            assert len(val_period) == 3, f"La durée de validation n'est pas respectée dans Split {i+1}!" # Vérifie le nombre exact de mois
+    except ValueError as e:
+        print(f"  Erreur lors de la visualisation des splits: {e}")
+    print(Fore.CYAN + "--- Fin de la visualisation des splits ---" + Style.RESET_ALL)
 
     # 2. Train — optimize=True pour GridSearchCV
-    #model, history = train(X_train, y_train, optimize=True)
-    model, history = train(X_train, y_train, optimize=False)
+    model, history = train(X_train_df, y_train_df, optimize=True)
 
     # 3. Evaluate — même modèle, pas de rechargement
-    metrics = evaluate(model, X_test, y_test)
+    metrics = evaluate(model, X_test_df.values, y_test_df.values)
 
     # 4. Predict — prévision 3 mois futurs
     forecast = pred(model, df_ml)
-
-    end_time = time.time()
-    execution_time = end_time - start_time
-
-    print("\n" + "="*45)
-    print(Fore.GREEN + f"⏱️  Temps total d'exécution : {execution_time:.2f} secondes" + Style.RESET_ALL)
-    print("="*45)

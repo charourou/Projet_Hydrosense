@@ -1,9 +1,11 @@
 import numpy as np
+import pandas as pd
 import time
 from colorama import Fore, Style
 from typing import Tuple, Optional
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from sklearn.model_selection import GridSearchCV
+from sklearn.model_selection import GridSearchCV, TimeSeriesSplit
+from hydrosense.ml_logic.folding import get_folds
 
 
 # Timing the XGBoost import
@@ -52,17 +54,23 @@ def initialize_model(
         verbosity=0
     )
 
-    print("✅ Model initialized")
+    print("Model initialized")
     return model
 
 
 def optimize_model(
     X: np.ndarray,
     y: np.ndarray,
-    cv: int = 3
+    X_train_df_for_folds: Optional[pd.DataFrame] = None, # Le DataFrame complet pour les folds
+    # date_column_name: str = 'date_mesure', # Plus nécessaire car get_folds prend un DatetimeIndex
+    n_splits_cv: int = 3, # Nombre de splits pour la CV
+    val_months_duration: int = 3, # Durée de la validation en mois
+    min_train_years: int = 3 # Nombre minimum d'années pour le premier jeu d'entraînement
 ) -> Tuple[XGBRegressor, dict]:
     """
     Run a GridSearchCV to find the best XGBoost hyperparameters.
+    Exécute un GridSearchCV pour trouver les meilleurs hyperparamètres XGBoost
+    en utilisant une stratégie de cross-validation chronologique annuelle.
 
     Parameters
     ----------
@@ -86,14 +94,28 @@ def optimize_model(
          "min_child_weight": [3, 5, 10]
     }
 
+    # Définition de la stratégie de découpage temporel
+    if X_train_df_for_folds is not None:
+        # Utilise la stratégie de fenêtre expansive annuelle
+        cv_strategy = get_folds(
+            # Passe directement le DatetimeIndex du DataFrame d'entraînement
+            dates_series=X_train_df_for_folds.index,
+            n_splits=n_splits_cv,
+            min_train_years=min_train_years,
+            val_months_duration=val_months_duration
+        )
+    else:
+        # Fallback au TimeSeriesSplit standard si les dates ne sont pas fournies
+        print(Fore.YELLOW + "Warning: dates_train not provided. Falling back to TimeSeriesSplit." + Style.RESET_ALL)
+        cv_strategy = TimeSeriesSplit(n_splits=n_splits_cv)
 
     grid_search = GridSearchCV(
         estimator=XGBRegressor(objective="reg:squarederror", random_state=42, n_jobs=-1, verbosity=0),
         param_grid=param_grid,
-        cv=cv,
-        scoring="neg_mean_squared_error",
-        n_jobs=-1,
-        verbose=1
+        cv=cv_strategy,                     # Utilise la stratégie de CV temporelle
+        scoring="neg_mean_squared_error",   # Ou 'neg_mean_absolute_error' selon la préférence
+        n_jobs=-1,                          # Utilise tous les cœurs disponibles
+        verbose=1                           # Affiche la progression
     )
 
     grid_search.fit(X, y)

@@ -1,7 +1,12 @@
-import os, re
-import requests
+import os, re, requests
 import pandas as pd
 import warnings
+from pathlib import Path
+
+# Définition du dossier de cache cible
+CHEMIN_ACTUEL = Path(__file__).resolve()
+RACINE_PROJET = CHEMIN_ACTUEL.parents[2]
+DOSSIER_CACHE = RACINE_PROJET / "raw_data" / "meteo"
 
 # Désactivation des alertes de types mixtes fréquentes sur les CSV Météo-France
 warnings.filterwarnings('ignore', category=pd.errors.DtypeWarning)
@@ -12,9 +17,9 @@ class CatalogueMeteo:
     DATASET_ID = "6569b51ae64326786e4e8e1a"
     API_URL = f"https://www.data.gouv.fr/api/1/datasets/{DATASET_ID}/"
 
-    def __init__(self, dossier_cache="raw_data/meteo"):
-        self.dossier_cache = dossier_cache
-        os.makedirs(self.dossier_cache, exist_ok=True)
+    def __init__(self):
+        self.dossier_cache = DOSSIER_CACHE
+        DOSSIER_CACHE.mkdir(parents=True, exist_ok=True)
 
     def _obtenir_urls_dept(self, code_dept: str) -> list:
         """Récupère dynamiquement les URLs des fichiers d'un département."""
@@ -73,7 +78,6 @@ class CatalogueMeteo:
         # Sélection stricte et tri chronologique
         colonnes_utiles = ['NUM_POSTE','date_RR', 'LAT', 'LON' ] + cibles
         colonnes_existantes = [c for c in colonnes_utiles if c in df.columns]
-
         return df[colonnes_existantes].sort_values(by='date_RR').reset_index(drop=True)
 
     def extraire_departement(self, code_dept: str) -> dict:
@@ -83,6 +87,7 @@ class CatalogueMeteo:
         Retourne un dictionnaire : { 'code_station': DataFrame_nettoyé }
         """
         urls = self._obtenir_urls_dept(code_dept)
+        print(urls)
         urls_triees = self._trier_urls_recentes_en_premier(urls)
 
         if not urls_triees:
@@ -137,10 +142,10 @@ class CatalogueMeteo:
 
 
 
-
 if __name__ == '__main__':
-    meteo = CatalogueMeteo(dossier_cache="raw_data/meteo")
-    db_test = meteo.extraire_departement("44")
+    meteo = CatalogueMeteo()
+    db_test = meteo.extraire_departement("40")
+
 
 
     for df in db_test.values():
