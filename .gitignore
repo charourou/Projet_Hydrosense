@@ -47,3 +47,4 @@ notebooks/solo_piezo.ipynb
 
 # google credentials
 secrets/
+github-actions-key.json
