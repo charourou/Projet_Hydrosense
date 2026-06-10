@@ -1,7 +1,6 @@
 import json
-
+import numpy as np
 import pandas as pd
-
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -259,6 +258,45 @@ def predict(bss_id: str):
     # TODO :
     # entrainer le modele sur toute la donnée ???
     # MAIS ON NE PEUT PAS MODIFIER FACILEMENT TRAIN TEST START ET END
+
+
+    # On s'entraine sur toute la donnée on n'a pas le controle sur le début de la prédiction.
+    # On recombine train et test ensemble.
+    Xtot = pd.concat([Xt, Xe])
+    ytot = pd.concat([yt, ye])
+
+
+    model, _ = train(Xtot, ytot, optimize=False)
+
+    forecast = pred_future(model, Xtot, n_weeks=13)
+
+    return {
+        "bss_id": bss_id,
+        "prévision": [
+            {"date": date.strftime("%Y-%m-%d"), "niveau": round(float(val), 3)}
+            for date, val in forecast.items()
+        ],
+    }
+
+
+
+
+    try:
+        df_raw = load_plean(bss_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    df_w = preprocess_week(df_raw)
+
+    #FEATURE_COLS = ["semaine", "lag_1", "lag_2", "lag_3", "lag_4", "lag_52", "moyenne_3w", "moyenne_6w"]
+    TRAINING_FEATURES = ['semaine_sin', 'semaine_cos', 'niveau_nappe_eau_lag_1',
+       'niveau_nappe_eau_lag_2', 'niveau_nappe_eau_lag_3',
+       'niveau_nappe_eau_lag_4', 'niveau_nappe_eau_lag_52', 'PC1_lag_1',
+       'PC2_lag_1', 'PC3_lag_1', 'PU_synth_lag_1', 'PU_synth_lag_2',
+       'PU_synth_lag_3', 'PU_synth_lag_4']
+
+    X_train = df_w[TRAINING_FEATURES]
+    y_train = df_w["niveau_nappe_eau"]
+    model, _ = train(X_train, y_train, optimize=False)
 
 
     # On s'entraine sur toute la donnée on n'a pas le controle sur le début de la prédiction.
