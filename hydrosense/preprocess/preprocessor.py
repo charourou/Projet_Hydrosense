@@ -89,7 +89,14 @@ def scale_feats(X_train_df: pd.DataFrame, X_test_df: pd.DataFrame) -> Tuple:
     feat_to_scale = ['niveau_nappe_eau', 'TM_synth', 'PC1','PC2', 'PC3', 'PU_synth']
     feat_to_minmax = ['RR_synth','FFM_synth']
 
-    cols_std = [c for c in feat_to_scale if c in X_train_df.columns]
+    # cols_std = [c for c in feat_to_scale if c in X_train_df.columns]
+    cols_std = []
+    for col in X_train_df.columns:
+        is_lagged_feature = any(col.startswith(f"{f}_lag_") for f in feat_to_scale)
+        is_base_feature = col in feat_to_scale
+        if is_base_feature or is_lagged_feature:
+            cols_std.append(col)
+
     cols_mm = [c for c in feat_to_minmax if c in X_train_df.columns]
 
     scaler = StandardScaler()
@@ -125,7 +132,7 @@ def prepare_lags(df_scaled: pd.DataFrame) -> pd.DataFrame:
 
     df_lagged = df_scaled.copy()
 
-    # Configuration des lags par feature : {nom_colonne: [liste_des_lags]}
+    # Configuration des lags par feature
     lag_config = {
         params.TARGET_COL: [1, 2, 3, 4, 52],
         "PC1": [1],
@@ -134,28 +141,41 @@ def prepare_lags(df_scaled: pd.DataFrame) -> pd.DataFrame:
         "PU_synth": [1, 2, 3, 4],
     }
 
-    # Liste des colonnes cibles
-    target_columns = ["PU_synth", "PC1", params.TARGET_COL]
-
-    # Liste des lags à appliquer (d'après ton exemple)
-    lags = [1, 2, 3, 4, 52]
-
-    # Dictionnaire pour stocker les nouvelles colonnes de lags avant concaténation
     new_columns = {}
 
-    # Génération des lags
-    for col in target_columns:
+    for col, lags in lag_config.items():
         if col in df_lagged.columns:
             for lag in lags:
-                # Nom de la colonne : ex 'PU_lag_1'
                 new_columns[f"{col}_lag_{lag}"] = df_lagged[col].shift(lag)
         else:
-            print(
-                f"Attention : La colonne '{col}' n'est pas présente dans le DataFrame."
-            )
+            print(f"Attention : La colonne '{col}' est absente du DataFrame.")
 
-    # Conversion du dictionnaire en DataFrame et fusion avec le DataFrame original
-    df_new_features = pd.DataFrame(new_columns, index=df_lagged.index)
-    df_lagged = pd.concat([df_lagged, df_new_features], axis=1)
 
+    if new_columns:
+        df_new_features = pd.DataFrame(new_columns, index=df_lagged.index)
+        df_lagged = pd.concat([df_lagged, df_new_features], axis=1)
+
+        df_lagged.drop(lag_config.keys(), axis=1, inplace=True)
+
+    df_lagged.dropna(inplace=True)
     return df_lagged
+
+
+if __name__ == "__main__":
+
+    # Pipeline exemple
+    df = load_plean(DATA_CODE_PIEZO)
+    df_w = preprocess_week(df)
+
+    # Lagging
+    X_lagged = prepare_lags(df_w)
+
+
+    # On split ensuite.
+    print(X_lagged.columns)
+    X_train, X_test= split_lagged_data(X_lagged)
+    # On a perdu le y )
+    _, _, y_train, y_test = split_data(df_w)
+
+    # Scaling
+    X_train_scaled, X_test_scaled, scaler, _ = scale_feats(X_train_df = X_train, X_test_df= X_test)

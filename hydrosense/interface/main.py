@@ -124,6 +124,30 @@ def preprocess_slim(df: pd.DataFrame) -> pd.DataFrame:
 # 3. TRAIN / TEST SPLIT
 # ══════════════════════════════════════════════════════════════════════════════
 
+def split_lagged_data(df_lagged: pd.DataFrame):
+
+    cols_to_retain = FEATURE_COLS + [TARGET_COL]
+
+    selected_features = []
+    for col in df_lagged.columns:
+        is_base_feature = col in FEATURE_COLS
+        is_lagged_feature = any(
+            col.startswith(f"{f}_lag_") for f in cols_to_retain
+        )
+        if is_base_feature or is_lagged_feature:
+            selected_features.append(col)
+
+    X = df_lagged[selected_features]
+
+
+    X_train_df = X.loc[:TRAIN_END]
+    X_test_df = X.loc[TEST_START:TEST_END]
+
+
+    return X_train_df, X_test_df
+
+
+
 def split_data(df_ml: pd.DataFrame):
     """
     Découpe en X_train, X_test, y_train, y_test.
@@ -175,7 +199,13 @@ def train(X_train_df: pd.DataFrame, y_train_df: pd.Series, optimize: bool = True
         print(Fore.BLUE + f"\nBest params: {best_params}" + Style.RESET_ALL)
     else:
         #on lui passe des hyperparametres de qualité
-        model = initialize_model(n_estimators= 1000,learning_rate= 0.1,max_depth=2,subsample=0.8,colsample_bytree =0.6, min_child_weight=5,random_state = 42)
+        model = initialize_model(n_estimators= 1000,
+                                 learning_rate= 0.1,
+                                 max_depth=2,
+                                 subsample=0.8,
+                                 colsample_bytree =0.6,
+                                 min_child_weight=5,
+                                 random_state = 42)
 
     model, history = train_model(model, X_train_df.values, y_train_df.values)
 
