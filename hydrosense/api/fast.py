@@ -1,15 +1,20 @@
 import json
 
+import pandas as pd
+
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from google.cloud import bigquery
 
-from hydrosense.database.bigquery import load_piezo_bq
+from hydrosense.database.bigquery import load_piezo_bq, load_plean
 from hydrosense.params import BQ_DATASET_ID, GCP_PROJECT_ID
 from hydrosense.preprocess.cleaning import clean_piezo
-from hydrosense.preprocess.preprocessor import preprocess_week
-from hydrosense.interface.main import train, pred_future
+from hydrosense.preprocess.preprocessor import preprocess_week, make_preproc_week
+from hydrosense.interface.main import train, pred_future, pred
+
+
+
 
 load_dotenv(override=True)
 
@@ -55,6 +60,43 @@ def catalogue():
         FROM `{GCP_PROJECT_ID}.{BQ_DATASET_ID}.cat_piezo_interm` i
         LEFT JOIN `{GCP_PROJECT_ID}.{BQ_DATASET_ID}.cat_piezo_raw` r USING (bss_id)
         WHERE i.bss_id IS NOT NULL
+        ORDER BY i.code_departement, i.nom_commune
+    """
+    df = _bq.query(query).to_dataframe()
+    return json.loads(df.to_json(orient="records"))
+
+
+@app.get("/catalogue/ml/map")
+def catalogue_ml_map():
+    """Piézomètres ML (France entière) avec coordonnées GPS et seuils percentiles."""
+    cols_sql = ", ".join(f"i.{c}" for c in PERCENTILE_COLS.values())
+    query = f"""
+        SELECT
+            i.bss_id, i.nom_commune, i.code_departement,
+            r.x, r.y,
+            {cols_sql}
+        FROM `{GCP_PROJECT_ID}.{BQ_DATASET_ID}.cat_piezo_interm` i
+        JOIN `{GCP_PROJECT_ID}.{BQ_DATASET_ID}.cat_piezo_raw` r USING (bss_id)
+        WHERE i.bss_id IN (
+            SELECT DISTINCT bss_id FROM `{GCP_PROJECT_ID}.{BQ_DATASET_ID}.chroniques_plean`
+        )
+          AND r.x IS NOT NULL AND r.y IS NOT NULL
+    """
+    df = _bq.query(query).to_dataframe()
+    return json.loads(df.to_json(orient="records"))
+
+
+@app.get("/catalogue/ml")
+def catalogue_ml():
+    """Piézomètres ayant des données dans chroniques_plean (prévision disponible)."""
+    query = f"""
+        SELECT i.bss_id, i.nom_commune, i.code_departement, r.nom_departement
+        FROM `{GCP_PROJECT_ID}.{BQ_DATASET_ID}.cat_piezo_interm` i
+        LEFT JOIN `{GCP_PROJECT_ID}.{BQ_DATASET_ID}.cat_piezo_raw` r USING (bss_id)
+        WHERE i.bss_id IN (
+            SELECT DISTINCT bss_id FROM `{GCP_PROJECT_ID}.{BQ_DATASET_ID}.chroniques_plean`
+        )
+          AND i.bss_id IS NOT NULL
         ORDER BY i.code_departement, i.nom_commune
     """
     df = _bq.query(query).to_dataframe()
@@ -170,22 +212,64 @@ def seuils(bss_id: str):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# PRÉCIPITATIONS
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/piezo/{bss_id}/pluie")
+def pluie(bss_id: str, days: int = 30):
+    """Précipitations (pluie utile en mm) depuis chroniques_plean."""
+    import pandas as pd
+    query = f"""
+        SELECT date_mesure, PU_synth
+        FROM `{GCP_PROJECT_ID}.{BQ_DATASET_ID}.chroniques_plean`
+        WHERE bss_id = @bss_id
+        ORDER BY date_mesure DESC
+        LIMIT @days
+    """
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[
+            bigquery.ScalarQueryParameter("bss_id", "STRING", bss_id),
+            bigquery.ScalarQueryParameter("days", "INT64", days),
+        ]
+    )
+    df = _bq.query(query, job_config=job_config).to_dataframe()
+    if df.empty:
+        raise HTTPException(status_code=404, detail=f"Aucune donnée de précipitation pour {bss_id}")
+    df["date_mesure"] = pd.to_datetime(df["date_mesure"])
+    df.sort_values("date_mesure", inplace=True)
+    return {
+        "bss_id": bss_id,
+        "pluie": [
+            {"date": row.date_mesure.strftime("%Y-%m-%d"), "pu_synth": round(float(row.PU_synth), 1)}
+            for row in df.itertuples()
+        ],
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # PRÉVISION
 # ══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/predict")
 def predict(bss_id: str):
     """Prévision XGBoost autorégressive sur 13 semaines."""
-    df_raw = load_piezo_bq(bss_id)
-    df_clean = clean_piezo(df_raw)
-    df_w = preprocess_week(df_clean)
 
-    FEATURE_COLS = ["semaine", "lag_1", "lag_2", "lag_3", "lag_4", "lag_52", "moyenne_3w", "moyenne_6w"]
-    X_train = df_w[FEATURE_COLS]
-    y_train = df_w["niveau_nappe_eau"]
-    model, _ = train(X_train, y_train, optimize=False)
+    df_clean = load_plean(bss_id)
+    Xt, Xe, yt, ye, scaler = make_preproc_week(df_clean)
+    # TODO :
+    # entrainer le modele sur toute la donnée ???
+    # MAIS ON NE PEUT PAS MODIFIER FACILEMENT TRAIN TEST START ET END
 
-    forecast = pred_future(model, df_w, n_weeks=13)
+
+    # On s'entraine sur toute la donnée on n'a pas le controle sur le début de la prédiction.
+    # On recombine train et test ensemble.
+    Xtot = pd.concat([Xt, Xe])
+    ytot = pd.concat([yt, ye])
+
+
+    model, _ = train(Xtot, ytot, optimize=False)
+
+    forecast = pred_future(model, Xtot, n_weeks=13)
 
     return {
         "bss_id": bss_id,

@@ -126,7 +126,6 @@ def optimize_model(
     print(f"✅ Optimization complete. Best params: {best_params}")
     return best_model, best_params
 
-
 def train_model(
     model: XGBRegressor,
     X: np.ndarray,
@@ -180,7 +179,6 @@ def train_model(
     print(f"   Train RMSE : {history['train_rmse']}")
 
     return model, history
-
 
 def evaluate_model(
     model: XGBRegressor,
@@ -237,7 +235,7 @@ def evaluate_model(
         "rmsse" : round(rmsse, 4) if np.isfinite(rmsse) else rmsse
             }
     if verbose:
-        print(f"✅ Model evaluated on test set")
+        print(f"✅ Model evaluated on set (train, val ou test)")
         print(f"   MAE  : {metrics['mae']}  (erreur moyenne en mètres NGF)")
         print(f"   RMSE : {metrics['rmse']} (pénalise les grandes erreurs)")
         print(f"   R²   : {metrics['r2']}  (1.0 = parfait)")
