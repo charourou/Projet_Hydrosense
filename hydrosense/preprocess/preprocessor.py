@@ -3,7 +3,17 @@ import pandas as pd
 from hydrosense import params
 
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
-#from colorama import Fore, Styl
+from sklearn.pipeline import Pipeline, make_pipeline
+from sklearn.impute import SimpleImputer
+
+from colorama import Fore, Style
+
+
+from hydrosense.database.bigquery import load_plean
+from typing import Tuple
+
+from hydrosense.interface.main import split_lagged_data, split_data
+
 
 def preprocess_week(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -44,27 +54,9 @@ def preprocess_week(df: pd.DataFrame) -> pd.DataFrame:
     df_w['semaine_sin'] = np.sin(2 * np.pi * df_w['semaine'] / 52)
     df_w['semaine_cos'] = np.cos(2 * np.pi * df_w['semaine'] / 52)
     df_w = df_w.drop(['semaine'], axis=1)
-    print(df_w.head())
-
-    if False:
-        df_w['lag_1'] = df_w['niveau_nappe_eau'].shift(1)
-        df_w['lag_2'] = df_w['niveau_nappe_eau'].shift(2)
-        df_w['lag_3'] = df_w['niveau_nappe_eau'].shift(3)
-        df_w['lag_4'] = df_w['niveau_nappe_eau'].shift(4)
-        df_w['lag_52'] = df_w['niveau_nappe_eau'].shift(52)
-        df_w['RR_synth'] = df_w['RR_synth']
-    #df_w['RR_lag_2'] = df_w['RR_synth'].shift(2)   # pluie il y a 2 semaines
-    #df_w['RR_moy_4w'] = df_w['RR_synth'].rolling(window=4).sum()  # cumul 4 semaines
-
-    if False:
-        df_w['moyenne_3w'] = df_w['niveau_nappe_eau'].shift(1).rolling(window=3).mean()
-        df_w['moyenne_6w'] = df_w['niveau_nappe_eau'].shift(1).rolling(window=6).mean()
 
     # IMPORTANT : Applique le .dropna() APRÈS avoir créé ces nouvelles variables
     df_w = df_w.dropna()
-
-    # X = df_w[['semaine', 'lag_1', 'lag_2', 'lag_3','lag_4', 'lag_52', 'moyenne_3w', 'moyenne_6w','RR_synth']]
-    # y_target = df_w['niveau_nappe_eau']
 
     print(f"✅ preprocess() done — {len(df_w)} semaines | {df_w.shape[1]} colonnes\n")
     return df_w
@@ -177,7 +169,14 @@ def scale_feats(X_train_df: pd.DataFrame, X_test_df: pd.DataFrame) -> Tuple:
     X_train_out = X_train_df.copy()
     X_test_out = X_test_df.copy()
 
-    X_train_out[cols_std] = scaler.fit_transform(X_train_df[cols_std])
+    try:
+        X_train_out[cols_std] = scaler.fit_transform(X_train_df[cols_std])
+    except:
+        print('error')
+        print(cols_std)
+        print(X_train_df)
+        raise
+
     X_test_out[cols_std] = scaler.transform(X_test_df[cols_std])
 
     if cols_mm:
@@ -229,6 +228,45 @@ def prepare_lags(df_scaled: pd.DataFrame) -> pd.DataFrame:
     return df_lagged
 
 
+def make_preproc_week(df: pd.DataFrame):
+    """
+    Pipeline complet : Prétraitement -> Lags -> Split -> Scaling
+    Retourne X_train, X_test, y_train, y_test scalés.
+    """
+
+    si = SimpleImputer(strategy='constant', fill_value = 0)
+    si.set_output(transform="pandas")
+
+    cols_pc = list(filter(lambda x: x.startswith('PC'), df.columns))
+    df[cols_pc] = si.fit_transform(df[cols_pc])
+
+
+    # Nettoyage & Feature Engineering (Lags)
+    df_w = preprocess_week(df)
+    df_full = prepare_lags(df_w)
+
+    # 2. Split temporel (on utilise la date pour découper proprement)
+    # il va falloir utiliser ce pipeline pour la production ou faire un
+
+    X_train, X_test= split_lagged_data(df_full)
+    _, _, y_train, y_test = split_data(df_w)
+
+    assert X_train.shape[0] > 0
+
+    X_train_scaled, X_test_scaled, scaler, _ = scale_feats( X_train_df=X_train,
+                                                       X_test_df=X_test
+                                                        )
+    y_train = y_train.loc[X_train_scaled.index]
+
+    # Vérification critique
+    assert X_train_scaled.shape[0] == y_train.shape[0], "Mismatch entre X_train et y_train !"
+
+    return X_train_scaled, X_test_scaled, y_train, y_test, scaler
+
+
+
+
+
 if __name__ == "__main__":
 
     # Pipeline exemple
@@ -244,6 +282,11 @@ if __name__ == "__main__":
     X_train, X_test= split_lagged_data(X_lagged)
     # On a perdu le y )
     _, _, y_train, y_test = split_data(df_w)
+    # il faut clipper les données y_train
+    y_train = y_train.loc[X_train.index]
+
 
     # Scaling
     X_train_scaled, X_test_scaled, scaler, _ = scale_feats(X_train_df = X_train, X_test_df= X_test)
+
+    assert X_train_scaled.shape[0] == y_train.shape[0]
