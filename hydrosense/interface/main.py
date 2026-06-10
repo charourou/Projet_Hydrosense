@@ -445,6 +445,12 @@ def pred_future(model, df_ml: pd.DataFrame, n_weeks: int = 13) -> pd.Series:
     """
     print(Fore.MAGENTA + "\n⭐️ Use case: pred_future" + Style.RESET_ALL)
 
+    TRAINING_FEATURES = ['semaine_sin', 'semaine_cos', 'niveau_nappe_eau_lag_1',
+       'niveau_nappe_eau_lag_2', 'niveau_nappe_eau_lag_3',
+       'niveau_nappe_eau_lag_4', 'niveau_nappe_eau_lag_52', 'PC1_lag_1',
+       'PC2_lag_1', 'PC3_lag_1', 'PU_synth_lag_1', 'PU_synth_lag_2',
+       'PU_synth_lag_3', 'PU_synth_lag_4']
+
     df_future = df_ml.copy()
     predictions = []
 
@@ -460,13 +466,21 @@ def pred_future(model, df_ml: pd.DataFrame, n_weeks: int = 13) -> pd.Series:
         next_date = df_future.index[-1] + pd.Timedelta(weeks=1)
 
         new_row = pd.DataFrame({
-            "semaine_sin":    [np.sin(2 * np.pi * next_date.isocalendar().week /        ext_date.isocalendar().week],
+            "niveau_nappe_eau": [y_next],
+            "semaine_sin":    [df_future["semaine_sin"]],
+            "semaine_cos":    [df_future["semaine_cos"]],
             "niveau_nappe_eau_lag_1":      [y_next],
-            "niveau_nappe_eau_lag_2":      [df_future["niveau_nappe_eau_lag_1"].iloc[-1]],
-            "niveau_nappe_eau_lag_3":      [df_future["niveau_nappe_eau_lag_2"].iloc[-1]],
-            "niveau_nappe_eau_lag_4":      [df_future["niveau_nappe_eau_lag_3"].iloc[-1]],
-            niveau_nappe_eau_lag_52":      0 , # OUILLLE OOUILLLE
-
+            "niveau_nappe_eau_lag_2":      [df_future["niveau_nappe_eau"].iloc[-1]],
+            "niveau_nappe_eau_lag_3":      [df_future["niveau_nappe_eau"].iloc[-2]],
+            "niveau_nappe_eau_lag_4":      [df_future["niveau_nappe_eau"].iloc[-3]],
+            "niveau_nappe_eau_lag_52":     [df_future["niveau_nappe_eau"].iloc[-51]],
+            "PC1_lag_1": [df_future["PC1"].iloc[-1]],
+            "PC2_lag_1": [df_future["PC2"].iloc[-1]],
+            "PC3_lag_1": [df_future["PC3"].iloc[-1]],
+            "PU_synth_lag_1" :[df_future["PU_synth"].iloc[-1]],
+            "PU_synth_lag_2" :[df_future["PU_synth"].iloc[-2]],
+            "PU_synth_lag_3" :[df_future["PU_synth"].iloc[-3]],
+            "PU_synth_lag_4" :[df_future["PU_synth"].iloc[-4]],
 
         }, index=[next_date])
 
