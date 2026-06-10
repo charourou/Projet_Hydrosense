@@ -66,6 +66,43 @@ def catalogue():
     return json.loads(df.to_json(orient="records"))
 
 
+@app.get("/catalogue/ml/map")
+def catalogue_ml_map():
+    """Piézomètres ML (France entière) avec coordonnées GPS et seuils percentiles."""
+    cols_sql = ", ".join(f"i.{c}" for c in PERCENTILE_COLS.values())
+    query = f"""
+        SELECT
+            i.bss_id, i.nom_commune, i.code_departement,
+            r.x, r.y,
+            {cols_sql}
+        FROM `{GCP_PROJECT_ID}.{BQ_DATASET_ID}.cat_piezo_interm` i
+        JOIN `{GCP_PROJECT_ID}.{BQ_DATASET_ID}.cat_piezo_raw` r USING (bss_id)
+        WHERE i.bss_id IN (
+            SELECT DISTINCT bss_id FROM `{GCP_PROJECT_ID}.{BQ_DATASET_ID}.chroniques_plean`
+        )
+          AND r.x IS NOT NULL AND r.y IS NOT NULL
+    """
+    df = _bq.query(query).to_dataframe()
+    return json.loads(df.to_json(orient="records"))
+
+
+@app.get("/catalogue/ml")
+def catalogue_ml():
+    """Piézomètres ayant des données dans chroniques_plean (prévision disponible)."""
+    query = f"""
+        SELECT i.bss_id, i.nom_commune, i.code_departement, r.nom_departement
+        FROM `{GCP_PROJECT_ID}.{BQ_DATASET_ID}.cat_piezo_interm` i
+        LEFT JOIN `{GCP_PROJECT_ID}.{BQ_DATASET_ID}.cat_piezo_raw` r USING (bss_id)
+        WHERE i.bss_id IN (
+            SELECT DISTINCT bss_id FROM `{GCP_PROJECT_ID}.{BQ_DATASET_ID}.chroniques_plean`
+        )
+          AND i.bss_id IS NOT NULL
+        ORDER BY i.code_departement, i.nom_commune
+    """
+    df = _bq.query(query).to_dataframe()
+    return json.loads(df.to_json(orient="records"))
+
+
 @app.get("/catalogue/raw")
 def catalogue_raw():
     """Catalogue complet depuis cat_piezo_raw."""
@@ -172,6 +209,41 @@ def seuils(bss_id: str):
         raise HTTPException(status_code=422, detail=f"Seuils incomplets pour {bss_id}")
 
     return {key: float(row[col]) for key, col in PERCENTILE_COLS.items()}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PRÉCIPITATIONS
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/piezo/{bss_id}/pluie")
+def pluie(bss_id: str, days: int = 30):
+    """Précipitations (pluie utile en mm) depuis chroniques_plean."""
+    import pandas as pd
+    query = f"""
+        SELECT date_mesure, PU_synth
+        FROM `{GCP_PROJECT_ID}.{BQ_DATASET_ID}.chroniques_plean`
+        WHERE bss_id = @bss_id
+        ORDER BY date_mesure DESC
+        LIMIT @days
+    """
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[
+            bigquery.ScalarQueryParameter("bss_id", "STRING", bss_id),
+            bigquery.ScalarQueryParameter("days", "INT64", days),
+        ]
+    )
+    df = _bq.query(query, job_config=job_config).to_dataframe()
+    if df.empty:
+        raise HTTPException(status_code=404, detail=f"Aucune donnée de précipitation pour {bss_id}")
+    df["date_mesure"] = pd.to_datetime(df["date_mesure"])
+    df.sort_values("date_mesure", inplace=True)
+    return {
+        "bss_id": bss_id,
+        "pluie": [
+            {"date": row.date_mesure.strftime("%Y-%m-%d"), "pu_synth": round(float(row.PU_synth), 1)}
+            for row in df.itertuples()
+        ],
+    }
 
 
 # ══════════════════════════════════════════════════════════════════════════════
