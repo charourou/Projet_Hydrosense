@@ -21,7 +21,6 @@ from utils.api_client import (
     load_catalog_ml_map,
     load_historique,
     load_pluie,
-    load_seuils_interm,
     seuils_from_row,
 )
 from utils.theme import SEUIL_COLORS, DESIGN_TOKENS
@@ -95,18 +94,27 @@ st.markdown("""
     .chart-legend{ display: flex; gap: 14px; margin-top: 5px; font-size: 0.71rem; color: #64748b; }
     .leg-line    { display: inline-block; width: 18px; height: 2px; vertical-align: middle; margin-right: 3px; background: #2484e5; }
 
-    /* ── Selectbox repositionné dans le header ── */
+    /* ── Selectbox dans le chips-row du header ── */
     [data-testid="stSelectbox"] {
         position: fixed !important;
-        top: 76px; left: 16px;
-        width: 344px !important;
+        top: 167px; left: 32px;
+        width: 312px !important;
         z-index: 1002;
         pointer-events: all;
-        /* sera rendu invisible par opacity car le panel-left a son propre header visuel */
-        opacity: 0;
-        pointer-events: all;
     }
-    /* On rend le selectbox visible uniquement (hack : on utilise un label custom dans le panel HTML) */
+    [data-testid="stSelectbox"] label { display: none !important; }
+    [data-testid="stSelectbox"] [data-baseweb="select"] > div {
+        background: #eff6ff !important;
+        border: 1.5px solid #2484e5 !important;
+        border-radius: 999px !important;
+        padding: 2px 10px !important;
+        min-height: 26px !important;
+        font-size: 0.77rem !important;
+        font-weight: 500 !important;
+        color: #2484e5 !important;
+        box-shadow: none !important;
+        cursor: pointer !important;
+    }
 
     /* stVegaLiteChart : pas de positionnement fixed (géré via Vega-Embed inline) */
     [data-testid="stVegaLiteChart"] {
@@ -183,10 +191,13 @@ nom_commune     = df_catalog.loc[df_catalog["label"] == selected_label, "nom_com
 nom_departement = df_catalog.loc[df_catalog["label"] == selected_label, "nom_departement"].iloc[0] or "?"
 dept            = df_catalog.loc[df_catalog["label"] == selected_label, "code_departement"].iloc[0] or "?"
 
-_seuils: dict[str, float] = load_seuils_interm(DATA_CODE_PIEZO) or _SEUILS_FALLBACK
-
-# Tous les marqueurs ML (France entière)
+# Tous les marqueurs ML (France entière) — chargé avant _seuils pour en extraire les percentiles
 df_map_dept = load_catalog_ml_map()
+
+_map_row = df_map_dept[df_map_dept["bss_id"] == DATA_CODE_PIEZO]
+_seuils: dict[str, float] = (
+    seuils_from_row(_map_row.iloc[0]) if not _map_row.empty else None
+) or _SEUILS_FALLBACK
 
 def _get_statut(val: float, seuils: dict) -> tuple[str, dict]:
     if val <= seuils["p5"]:    return "Crise",           SEUIL_COLORS["Crise"]
@@ -214,8 +225,8 @@ with st.spinner("Chargement des données historiques..."):
 with st.spinner("Chargement de la prévision via l'API..."):
     result = get_forecast(DATA_CODE_PIEZO)
 
-deux_ans = pd.Timestamp.today() - pd.Timedelta(days=365 * 2)
-df_hist_filtre = df_clean[df_clean["date_mesure"] >= deux_ans]
+six_mois = pd.Timestamp.today() - pd.Timedelta(days=182)
+df_hist_filtre = df_clean[df_clean["date_mesure"] >= six_mois]
 
 df_pred_val = pd.DataFrame(result["prévision"])
 df_pred_val["date_mesure"]      = pd.to_datetime(df_pred_val["date"])
@@ -314,19 +325,22 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as _plt
 import matplotlib.patches as _mpatches
+import matplotlib.dates as _mdates
 from io import BytesIO as _BytesIO
 import base64 as _b64
 
-_fig, _ax = _plt.subplots(figsize=(4.6, 1.2))
+_fig, _ax = _plt.subplots(figsize=(4.6, 1.5), layout="constrained")
 _fig.patch.set_alpha(0)
 _ax.set_facecolor("none")
 
 # Bandes de seuil
 _seuil_bands = [
-    (_seuils["p5"],  _seuils["p10"], SEUIL_COLORS["Alerte"]["bg"]),
-    (_seuils["p10"], _seuils["p20"], SEUIL_COLORS["Vigilance"]["bg"]),
-    (_seuils["p20"], _seuils["p85"], SEUIL_COLORS["Normal"]["bg"]),
-    (_seuils["p85"], _seuils["p95"], SEUIL_COLORS["Modérément haut"]["bg"]),
+    (y_lo,             _seuils["p5"],  SEUIL_COLORS["Crise"]["bg"]),
+    (_seuils["p5"],    _seuils["p10"], SEUIL_COLORS["Alerte"]["bg"]),
+    (_seuils["p10"],   _seuils["p20"], SEUIL_COLORS["Vigilance"]["bg"]),
+    (_seuils["p20"],   _seuils["p85"], SEUIL_COLORS["Normal"]["bg"]),
+    (_seuils["p85"],   _seuils["p95"], SEUIL_COLORS["Modérément haut"]["bg"]),
+    (_seuils["p95"],   y_hi,           SEUIL_COLORS["Très haut"]["bg"]),
 ]
 _x_lo = _dates_hist[0]
 _x_hi = _dates_pred[min(29, len(_dates_pred) - 1)]
@@ -342,8 +356,16 @@ _ax.plot([_today], [derniere_val], "o", color="#2484e5", markersize=4, zorder=5)
 
 _ax.set_xlim(_x_lo, _x_hi)
 _ax.set_ylim(y_lo, y_hi)
-_ax.axis("off")
-_fig.tight_layout(pad=0)
+
+# Axe X : mois en abrégé
+_ax.xaxis.set_major_locator(_mdates.MonthLocator())
+_ax.xaxis.set_major_formatter(_mdates.DateFormatter("%b"))
+_ax.tick_params(axis="x", labelsize=6.5, colors="#94a3b8", length=0, pad=2)
+_ax.tick_params(axis="y", labelsize=6.5, colors="#94a3b8", length=0, pad=2)
+_ax.yaxis.set_major_locator(_plt.MaxNLocator(nbins=4, prune="both"))
+_ax.yaxis.set_major_formatter(_plt.FuncFormatter(lambda v, _: f"{v:.1f}"))
+for _sp in ["top", "right", "bottom", "left"]:
+    _ax.spines[_sp].set_visible(False)
 
 _buf = _BytesIO()
 _fig.savefig(_buf, format="svg", bbox_inches="tight", transparent=True)
@@ -410,7 +432,7 @@ panel_html = (
     '<div class="breadcrumb"><span>Poitou-Charentes</span>'
     '<span style="color:#cbd5e1;">›</span>'
     '<span style="color:#1e293b;font-weight:600;">' + nom_commune + '</span></div>'
-    '<div class="chips-row"><span class="chip active">' + nom_commune + '</span></div>'
+    '<div class="chips-row" style="min-height:30px;"></div>'
     '<div class="meta-row">'
     '<span class="meta-tag">' + dept + ' · ' + nom_departement + '</span>'
     '<span class="meta-tag">Nappe libre</span>'
@@ -487,10 +509,12 @@ st.markdown(f"""
 
 # ── Seuils réglementaires (card fixe bas-droite, au-dessus de la KPI row) ─────
 _seuils_display = [
-    ("Normal",    f"< {_seuils['p20']:.1f} m",                               SEUIL_COLORS["Normal"]),
-    ("Vigilance", f"{_seuils['p20']:.1f} – {_seuils['p10']:.1f} m",          SEUIL_COLORS["Vigilance"]),
-    ("Alerte",    f"{_seuils['p10']:.1f} – {_seuils['p5']:.1f} m",           SEUIL_COLORS["Alerte"]),
-    ("Crise",     f"> {_seuils['p5']:.1f} m",                                 SEUIL_COLORS["Crise"]),
+    ("Très haut",       f"> {_seuils['p95']:.1f} m",                               SEUIL_COLORS["Très haut"]),
+    ("Modérément haut", f"{_seuils['p85']:.1f} – {_seuils['p95']:.1f} m",          SEUIL_COLORS["Modérément haut"]),
+    ("Normal",          f"{_seuils['p20']:.1f} – {_seuils['p85']:.1f} m",          SEUIL_COLORS["Normal"]),
+    ("Vigilance",       f"{_seuils['p10']:.1f} – {_seuils['p20']:.1f} m",          SEUIL_COLORS["Vigilance"]),
+    ("Alerte",          f"{_seuils['p5']:.1f} – {_seuils['p10']:.1f} m",           SEUIL_COLORS["Alerte"]),
+    ("Crise",           f"< {_seuils['p5']:.1f} m",                                SEUIL_COLORS["Crise"]),
 ]
 _seuils_rows_html = ""
 for _nom, _lim, _col in _seuils_display:
