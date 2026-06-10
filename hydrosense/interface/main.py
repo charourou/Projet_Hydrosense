@@ -10,10 +10,9 @@ from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error, m
 from hydrosense.ml_logic.model import initialize_model, optimize_model, train_model, evaluate_model, predict_model
 from hydrosense.ml_logic.folding import get_folds
 
-from hydrosense.database.bigquery import load_piezo_bq
+from hydrosense.database.bigquery import load_piezo_bq, load_plean
 from hydrosense.preprocess.cleaning import clean_piezo, clean_piezo2
 from hydrosense.preprocess.preprocessor import preprocess_week
-
 
 from hydrosense import params
 
@@ -22,7 +21,7 @@ from hydrosense import params
 #  TODO : GERER PARAMS
 # ══════════════════════════════════════════════════════════════════════════════
 
-MODEL_TYPE = 'XGB'  # ['LINEAR','BAG'] ??
+MODEL_TYPE = 'XGB'  # ['LASSO', 'BASE']
 
 DATA_PATH    = Path("data/piezo_bourdet_clean.csv")
 DATA_CODE_PIEZO = "BSS001QHYH"
@@ -32,12 +31,8 @@ DATE_COL     = "date_mesure"
 #FEATURE_COLS = ["semaine", "lag_1", "lag_2", "lag_3", "lag_12", "moyenne_3m", "moyenne_6m"]
 #FEATURE_COLS = ["semaine", "lag_1", "lag_2", "lag_3","lag_4" ,"lag_52", "moyenne_3w", "moyenne_6w","RR_lag_1","RR_lag_2","RR_moy_4w"]
 FEATURE_COLS = ["semaine_sin","semaine_cos", "lag_1", "lag_2", "lag_3","lag_4" ,"lag_52", "moyenne_3w", "moyenne_6w","RR_synth"]
-#FEATURE_COLS = ["semaine_sin","semaine_cos", "lag_1","lag_4" ,"lag_52", "moyenne_3w", "moyenne_6w","RR_lag_1","RR_lag_2","RR_moy_4w"]
+FEATURE_COLS = ["semaine_sin","semaine_cos", "PU_synth", "PC1", "PC2", "PC3"]
 
-# A revoir
-# FEATURE_COLS = ["mois", "mois_sin", "mois_cos", "semaine",
-#                 "lag_1", "lag_2", "lag_3", "lag_12",
-#                 "moyenne_3m", "moyenne_6m"]
 
 # Split : 3 derniers mois en test (Mars → Mai 2026)
 # EN DUR --- OUILLE OUILLE
@@ -94,14 +89,10 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     # Feature engineering
     df_ml = pd.DataFrame(y_mensuel)
 
-
     df_ml["lag_1"]      = df_ml[params.TARGET_COL].shift(1)
     df_ml["lag_2"]      = df_ml[params.TARGET_COL].shift(2)
     df_ml["lag_3"]      = df_ml[params.TARGET_COL].shift(3)
     df_ml["lag_12"]     = df_ml[params.TARGET_COL].shift(12)
-
-    # A supprimer
-
     df_ml["moyenne_3m"] = df_ml[params.TARGET_COL].rolling(window=3).mean()
     df_ml["moyenne_6m"] = df_ml[params.TARGET_COL].rolling(window=6).mean()
     df_ml = df_ml.dropna()
@@ -129,7 +120,6 @@ def preprocess_slim(df: pd.DataFrame) -> pd.DataFrame:
 
 
 
-
 # ══════════════════════════════════════════════════════════════════════════════
 # 3. TRAIN / TEST SPLIT
 # ══════════════════════════════════════════════════════════════════════════════
@@ -137,7 +127,6 @@ def preprocess_slim(df: pd.DataFrame) -> pd.DataFrame:
 def split_data(df_ml: pd.DataFrame):
     """
     Découpe en X_train, X_test, y_train, y_test.
-    Test = Mars → Mai 2026 (3 derniers mois).
     """
     print(Fore.MAGENTA + "\n⭐️ Use case: split_data" + Style.RESET_ALL)
 
@@ -151,7 +140,7 @@ def split_data(df_ml: pd.DataFrame):
     y_train_df = y.loc[:TRAIN_END]
     y_test_df  = y.loc[TEST_START:TEST_END]
 
-    print(f"✅ split_data() done — Train : {len(X_train_df)} mois | Test : {len(X_test_df)} mois\n")
+    print(f"✅ split_data() done — Train : {len(X_train_df)} | Test : {len(X_test_df)}\n")
     return X_train_df, X_test_df, y_train_df, y_test_df
 
 
@@ -317,18 +306,18 @@ def pred(model, df_ml: pd.DataFrame) -> pd.Series:
 
 if __name__ == "__main__":
 
-    # 1. Données — une seule fois
-    #df    = load_data() # du CSV
+
     # load from big query
     #df = clean_piezo(load_piezo_bq(DATA_CODE_PIEZO))
-    df = clean_piezo2(load_piezo_bq(DATA_CODE_PIEZO))
+    df = load_plean(DATA_CODE_PIEZO)
 
     if params.DATE_COL in df.columns:
         df[params.DATE_COL] = pd.to_datetime(df[params.DATE_COL])
         df.set_index(params.DATE_COL, inplace=True)
     df = df.sort_index()
 
-    df_ml = preprocess(df)  # OR preprocess_week ???
+    df_ml = preprocess_week(df)  # OR preprocess_week ???
+
     X_train_df, X_test_df, y_train_df, y_test_df = split_data(df_ml)
 
     # --- Zone de test pour visualiser les splits de cross-validation ---
