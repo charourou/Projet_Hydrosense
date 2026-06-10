@@ -15,7 +15,7 @@ from hydrosense.ml_logic.base import BaselineLastYear
 
 from hydrosense.database.bigquery import load_piezo_bq, load_plean
 from hydrosense.preprocess.cleaning import clean_piezo, clean_piezo2
-from hydrosense.preprocess.preprocessor import preprocess_week
+from hydrosense.preprocess.preprocessor import preprocess_week, split_data
 
 
 from hydrosense import params
@@ -26,14 +26,10 @@ from hydrosense import params
 # ══════════════════════════════════════════════════════════════════════════════
 
 MODEL_TYPE = 'LASSO'  # ['LASSO', 'BASE', 'XGB']
-
 DATA_PATH    = Path("data/piezo_bourdet_clean.csv")
 DATA_CODE_PIEZO = "BSS001QHYH"
-TARGET_COL   = "niveau_nappe_eau"
 DATE_COL     = "date_mesure"
 
-
-FEATURE_COLS = ["semaine_sin","semaine_cos", "lag_1", "lag_2", "lag_3","lag_4" ,"lag_52", "moyenne_3w", "moyenne_6w","RR_synth"]
 FEATURE_COLS = ["semaine_sin","semaine_cos", "PU_synth", "PC1", "PC2", "PC3"]
 
 
@@ -41,6 +37,8 @@ FEATURE_COLS = ["semaine_sin","semaine_cos", "PU_synth", "PC1", "PC2", "PC3"]
 TRAIN_END  = "2025-02-28"
 TEST_START = "2025-03-01"
 TEST_END   = "2025-05-31"
+
+
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -121,53 +119,7 @@ def preprocess_slim(df: pd.DataFrame) -> pd.DataFrame:
     print(f"Preprocess SLIM done — {len(df_ml)} mois | {df_ml.shape[1]} colonnes\n")
     return df_ml
 
-# ══════════════════════════════════════════════════════════════════════════════
-# 3. TRAIN / TEST SPLIT
-# ══════════════════════════════════════════════════════════════════════════════
 
-def split_lagged_data(df_lagged: pd.DataFrame):
-
-    cols_to_retain = FEATURE_COLS + [TARGET_COL]
-
-    selected_features = []
-    for col in df_lagged.columns:
-        is_base_feature = col in FEATURE_COLS
-        is_lagged_feature = any(
-            col.startswith(f"{f}_lag_") for f in cols_to_retain
-        )
-        if is_base_feature or is_lagged_feature:
-            selected_features.append(col)
-
-    X = df_lagged[selected_features]
-
-    X_train_df = X.loc[:TRAIN_END]
-    X_test_df = X.loc[TEST_START:TEST_END]
-
-    return X_train_df, X_test_df
-
-def split_data(df_ml: pd.DataFrame):
-    """
-    Découpe en X_train, X_test, y_train, y_test.
-    """
-    print(Fore.MAGENTA + "\n⭐️ Use case: split_data" + Style.RESET_ALL)
-
-    cols = [c for c in df_ml.columns if c in FEATURE_COLS]
-
-    X = df_ml[cols]
-    y = df_ml[params.TARGET_COL]
-
-    X_train_df = X.loc[:TRAIN_END]
-    X_test_df  = X.loc[TEST_START:TEST_END]
-    y_train_df = y.loc[:TRAIN_END]
-    y_test_df  = y.loc[TEST_START:TEST_END]
-
-    print(f"✅ split_data() done — Train : {len(X_train_df)} | Test : {len(X_test_df)}\n")
-    return X_train_df, X_test_df, y_train_df, y_test_df
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# 4. TRAIN
-# ══════════════════════════════════════════════════════════════════════════════
 
 def train(X_train_df: pd.DataFrame, y_train_df: pd.Series,
           pick_model = None,
@@ -361,7 +313,6 @@ def pred(model, df_ml: pd.DataFrame) -> pd.Series:
 
 if __name__ == "__main__":
 
-
     # load from big query
     #df = clean_piezo(load_piezo_bq(DATA_CODE_PIEZO))
     df = load_plean(DATA_CODE_PIEZO)
@@ -373,7 +324,14 @@ if __name__ == "__main__":
 
     df_ml = preprocess_week(df)  # OR preprocess_week ???
 
-    X_train_df, X_test_df, y_train_df, y_test_df = split_data(df_ml)
+    X_train_df, X_test_df, y_train_df, y_test_df = split_data(
+        df_ml,
+        feature_cols=FEATURE_COLS,
+        target_col=params.TARGET_COL,
+        train_end=TRAIN_END,
+        test_start=TEST_START,
+        test_end=TEST_END
+    )
 
     # --- Zone de test pour visualiser les splits de cross-validation ---
     print(Fore.CYAN + "\n--- Visualisation des splits de cross-validation annuels ---" + Style.RESET_ALL)
@@ -441,16 +399,16 @@ def pred_future(model, df_ml: pd.DataFrame, n_weeks: int = 13) -> pd.Series:
         y_next = predict_model(model, last_row)[0]
         next_date = df_future.index[-1] + pd.Timedelta(weeks=1)
 
-        new_row = pd.DataFrame({
-            "semaine_sin":    [np.sin(2 * np.pi * next_date.isocalendar().week /        ext_date.isocalendar().week],
+        new_row = pd.DataFrame(
+            {
+            "semaine_sin":    [np.sin(2 * np.pi) * next_date.isocalendar().week / next_date.isocalendar().week],
             "niveau_nappe_eau_lag_1":      [y_next],
             "niveau_nappe_eau_lag_2":      [df_future["niveau_nappe_eau_lag_1"].iloc[-1]],
             "niveau_nappe_eau_lag_3":      [df_future["niveau_nappe_eau_lag_2"].iloc[-1]],
             "niveau_nappe_eau_lag_4":      [df_future["niveau_nappe_eau_lag_3"].iloc[-1]],
-            niveau_nappe_eau_lag_52":      0 , # OUILLLE OOUILLLE
-
-
-        }, index=[next_date])
+            "niveau_nappe_eau_lag_52":      [0] , # OUILLLE OOUILLLE
+        }
+        , index=[next_date])
 
         df_future = pd.concat([df_future, new_row])
         predictions.append((next_date, round(float(y_next), 3)))

@@ -8,11 +8,8 @@ from sklearn.impute import SimpleImputer
 
 from colorama import Fore, Style
 
-
 from hydrosense.database.bigquery import load_plean
 from typing import Tuple
-
-from hydrosense.interface.main import split_lagged_data, split_data
 
 
 def preprocess_week(df: pd.DataFrame) -> pd.DataFrame:
@@ -22,11 +19,10 @@ def preprocess_week(df: pd.DataFrame) -> pd.DataFrame:
     - Supprime les lignes avec NaN (dues aux shifts)
 
     Features produites :
-        Semaine        → saisonnalité semaine
-        lag_1/2/3/4   → niveaux des 4 semaines précédents
-        lag_52      → niveau même semaine l'année précédente
+        Semaine sin et cos       → saisonnalité semaine
+
     """
-    #print(Fore.MAGENTA +
+
     print("\n⭐️ Use case: preprocess" ) #+ Style.RESET_ALL)
 
 
@@ -58,8 +54,52 @@ def preprocess_week(df: pd.DataFrame) -> pd.DataFrame:
     # IMPORTANT : Applique le .dropna() APRÈS avoir créé ces nouvelles variables
     df_w = df_w.dropna()
 
-    print(f"✅ preprocess() done — {len(df_w)} semaines | {df_w.shape[1]} colonnes\n")
+    print(f"✅ Moyenne hebdomadaire — {len(df_w)} semaines | {df_w.shape[1]} colonnes\n")
     return df_w
+
+def split_lagged_data(df_lagged: pd.DataFrame,
+                      feature_cols: list,  target_col: str,
+                      train_end: str,test_start: str,test_end: str):
+    """Splits lagged data into train and test sets for features."""
+
+    cols_to_retain = feature_cols + [target_col]
+
+    selected_features = []
+    for col in df_lagged.columns:
+        is_base_feature = col in feature_cols
+        is_lagged_feature = any(
+            col.startswith(f"{f}_lag_") for f in cols_to_retain
+        )
+        if is_base_feature or is_lagged_feature:
+            selected_features.append(col)
+
+    X = df_lagged[selected_features]
+
+    X_train_df = X.loc[:train_end]
+    X_test_df = X.loc[test_start:test_end]
+
+    return X_train_df, X_test_df
+
+def split_data(df_ml: pd.DataFrame,
+               feature_cols: list, target_col: str,
+               train_end: str, test_start: str, test_end: str):
+    """
+    Découpe en X_train, X_test, y_train, y_test.
+    """
+    print(Fore.MAGENTA + "\n⭐️ Use case: split_data" + Style.RESET_ALL)
+
+    cols = [c for c in df_ml.columns if c in feature_cols]
+
+    X = df_ml[cols]
+    y = df_ml[target_col]
+
+    X_train_df = X.loc[:train_end]
+    X_test_df  = X.loc[test_start:test_end]
+    y_train_df = y.loc[:train_end]
+    y_test_df  = y.loc[test_start:test_end]
+
+    print(f"✅ split_data() done — Train : {len(X_train_df)} | Test : {len(X_test_df)}\n")
+    return X_train_df, X_test_df, y_train_df, y_test_df
 
 
 
@@ -158,7 +198,9 @@ def prepare_lags(df_scaled: pd.DataFrame) -> pd.DataFrame:
     return df_lagged
 
 
-def make_preproc_week(df: pd.DataFrame):
+def make_preproc_week(df: pd.DataFrame,
+                      feature_cols: list, target_col: str,
+                      train_end: str, test_start: str, test_end: str):
     """
     Pipeline complet : Prétraitement -> Lags -> Split -> Scaling
     Retourne X_train, X_test, y_train, y_test scalés.
@@ -170,7 +212,6 @@ def make_preproc_week(df: pd.DataFrame):
     cols_pc = list(filter(lambda x: x.startswith('PC'), df.columns))
     df[cols_pc] = si.fit_transform(df[cols_pc])
 
-
     # Nettoyage & Feature Engineering (Lags)
     df_w = preprocess_week(df)
     df_full = prepare_lags(df_w)
@@ -178,8 +219,12 @@ def make_preproc_week(df: pd.DataFrame):
     # 2. Split temporel (on utilise la date pour découper proprement)
     # il va falloir utiliser ce pipeline pour la production ou faire un
 
-    X_train, X_test= split_lagged_data(df_full)
-    _, _, y_train, y_test = split_data(df_w)
+    X_train, X_test = split_lagged_data(
+        df_full, feature_cols, target_col, train_end, test_start, test_end
+    )
+    _, _, y_train, y_test = split_data(
+        df_w, feature_cols, target_col, train_end, test_start, test_end
+    )
 
     assert X_train.shape[0] > 0
 
@@ -195,9 +240,14 @@ def make_preproc_week(df: pd.DataFrame):
 
 
 
-
-
 if __name__ == "__main__":
+
+    # Définition des constantes pour le test
+    DATA_CODE_PIEZO = "BSS001QHYH"
+    FEATURE_COLS = ["semaine_sin", "semaine_cos", "PU_synth", "PC1", "PC2", "PC3"]
+    TRAIN_END = "2025-02-28"
+    TEST_START = "2025-03-01"
+    TEST_END = "2025-05-31"
 
     # Pipeline exemple
     df = load_plean(DATA_CODE_PIEZO)
@@ -206,15 +256,17 @@ if __name__ == "__main__":
     # Lagging
     X_lagged = prepare_lags(df_w)
 
-
     # On split ensuite.
     print(X_lagged.columns)
-    X_train, X_test= split_lagged_data(X_lagged)
+    X_train, X_test = split_lagged_data(
+        X_lagged, FEATURE_COLS, params.TARGET_COL, TRAIN_END, TEST_START, TEST_END
+    )
     # On a perdu le y )
-    _, _, y_train, y_test = split_data(df_w)
+    _, _, y_train, y_test = split_data(
+        df_w, FEATURE_COLS, params.TARGET_COL, TRAIN_END, TEST_START, TEST_END
+    )
     # il faut clipper les données y_train
     y_train = y_train.loc[X_train.index]
-
 
     # Scaling
     X_train_scaled, X_test_scaled, scaler, _ = scale_feats(X_train_df = X_train, X_test_df= X_test)
