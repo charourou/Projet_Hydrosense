@@ -6,14 +6,14 @@ from colorama import Fore, Style
 from typing import Tuple
 
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error, max_error
+from sklearn.linear_model import Lasso
 
 from hydrosense.ml_logic.model import initialize_model, optimize_model, train_model, evaluate_model, predict_model
 from hydrosense.ml_logic.folding import get_folds
 
-from hydrosense.database.bigquery import load_piezo_bq
+from hydrosense.database.bigquery import load_piezo_bq, load_plean
 from hydrosense.preprocess.cleaning import clean_piezo, clean_piezo2
 from hydrosense.preprocess.preprocessor import preprocess_week
-
 
 from hydrosense import params
 
@@ -22,7 +22,7 @@ from hydrosense import params
 #  TODO : GERER PARAMS
 # ══════════════════════════════════════════════════════════════════════════════
 
-MODEL_TYPE = 'XGB'  # ['LINEAR','BAG'] ??
+MODEL_TYPE = 'LASSO'  # ['LASSO', 'BASE']
 
 DATA_PATH    = Path("data/piezo_bourdet_clean.csv")
 DATA_CODE_PIEZO = "BSS001QHYH"
@@ -48,11 +48,9 @@ FEATURE_COLS = [
     # Lags 1 à 4 pour PU_synth
     "PU_synth_lag_1", "PU_synth_lag_2", "PU_synth_lag_3", "PU_synth_lag_4"
 ]
+FEATURE_COLS = ["semaine_sin","semaine_cos", "lag_1", "lag_2", "lag_3","lag_4" ,"lag_52", "moyenne_3w", "moyenne_6w","RR_synth"]
+FEATURE_COLS = ["semaine_sin","semaine_cos", "PU_synth", "PC1", "PC2", "PC3"]
 
-# A revoir
-# FEATURE_COLS = ["mois", "mois_sin", "mois_cos", "semaine",
-#                 "lag_1", "lag_2", "lag_3", "lag_12",
-#                 "moyenne_3m", "moyenne_6m"]
 
 # Split : 3 derniers mois en test (Mars → Mai 2026)
 # EN DUR --- OUILLE OUILLE
@@ -109,14 +107,10 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     # Feature engineering
     df_ml = pd.DataFrame(y_mensuel)
 
-
     df_ml["lag_1"]      = df_ml[params.TARGET_COL].shift(1)
     df_ml["lag_2"]      = df_ml[params.TARGET_COL].shift(2)
     df_ml["lag_3"]      = df_ml[params.TARGET_COL].shift(3)
     df_ml["lag_12"]     = df_ml[params.TARGET_COL].shift(12)
-
-    # A supprimer
-
     df_ml["moyenne_3m"] = df_ml[params.TARGET_COL].rolling(window=3).mean()
     df_ml["moyenne_6m"] = df_ml[params.TARGET_COL].rolling(window=6).mean()
     df_ml = df_ml.dropna()
@@ -144,15 +138,37 @@ def preprocess_slim(df: pd.DataFrame) -> pd.DataFrame:
 
 
 
-
 # ══════════════════════════════════════════════════════════════════════════════
 # 3. TRAIN / TEST SPLIT
 # ══════════════════════════════════════════════════════════════════════════════
 
+def split_lagged_data(df_lagged: pd.DataFrame):
+
+    cols_to_retain = FEATURE_COLS + [TARGET_COL]
+
+    selected_features = []
+    for col in df_lagged.columns:
+        is_base_feature = col in FEATURE_COLS
+        is_lagged_feature = any(
+            col.startswith(f"{f}_lag_") for f in cols_to_retain
+        )
+        if is_base_feature or is_lagged_feature:
+            selected_features.append(col)
+
+    X = df_lagged[selected_features]
+
+
+    X_train_df = X.loc[:TRAIN_END]
+    X_test_df = X.loc[TEST_START:TEST_END]
+
+
+    return X_train_df, X_test_df
+
+
+
 def split_data(df_ml: pd.DataFrame):
     """
     Découpe en X_train, X_test, y_train, y_test.
-    Test = Mars → Mai 2026 (3 derniers mois).
     """
     print(Fore.MAGENTA + "\n⭐️ Use case: split_data" + Style.RESET_ALL)
 
@@ -166,7 +182,7 @@ def split_data(df_ml: pd.DataFrame):
     y_train_df = y.loc[:TRAIN_END]
     y_test_df  = y.loc[TEST_START:TEST_END]
 
-    print(f"✅ split_data() done — Train : {len(X_train_df)} mois | Test : {len(X_test_df)} mois\n")
+    print(f"✅ split_data() done — Train : {len(X_train_df)} | Test : {len(X_test_df)}\n")
     return X_train_df, X_test_df, y_train_df, y_test_df
 
 
@@ -187,6 +203,16 @@ def train(X_train_df: pd.DataFrame, y_train_df: pd.Series, optimize: bool = True
     -------
     (model, history)
     """
+
+    if MODEL_TYPE == 'LASSO':
+        print(Fore.MAGENTA + "\n⭐️ Use case: train (Mode Baseline Lasso)" + Style.RESET_ALL)
+        model = Lasso(alpha=0.1, random_state=42)
+        model.fit(X_train_df.values, y_train_df.values)
+
+        history = {}
+        print("✅ train() done — Modèle Lasso entraîné.\n")
+        return model, history
+
     print(Fore.MAGENTA + "\n⭐️ Use case: train" + Style.RESET_ALL)
 
     if optimize:
@@ -201,7 +227,13 @@ def train(X_train_df: pd.DataFrame, y_train_df: pd.Series, optimize: bool = True
         print(Fore.BLUE + f"\nBest params: {best_params}" + Style.RESET_ALL)
     else:
         #on lui passe des hyperparametres de qualité
-        model = initialize_model(n_estimators= 1000,learning_rate= 0.1,max_depth=2,subsample=0.8,colsample_bytree =0.6, min_child_weight=5,random_state = 42)
+        model = initialize_model(n_estimators= 1000,
+                                 learning_rate= 0.1,
+                                 max_depth=2,
+                                 subsample=0.8,
+                                 colsample_bytree =0.6,
+                                 min_child_weight=5,
+                                 random_state = 42)
 
     model, history = train_model(model, X_train_df.values, y_train_df.values)
 
@@ -332,18 +364,18 @@ def pred(model, df_ml: pd.DataFrame) -> pd.Series:
 
 if __name__ == "__main__":
 
-    # 1. Données — une seule fois
-    #df    = load_data() # du CSV
+
     # load from big query
     #df = clean_piezo(load_piezo_bq(DATA_CODE_PIEZO))
-    df = clean_piezo2(load_piezo_bq(DATA_CODE_PIEZO))
+    df = load_plean(DATA_CODE_PIEZO)
 
     if params.DATE_COL in df.columns:
         df[params.DATE_COL] = pd.to_datetime(df[params.DATE_COL])
         df.set_index(params.DATE_COL, inplace=True)
     df = df.sort_index()
 
-    df_ml = preprocess(df)  # OR preprocess_week ???
+    df_ml = preprocess_week(df)  # OR preprocess_week ???
+
     X_train_df, X_test_df, y_train_df, y_test_df = split_data(df_ml)
 
     # --- Zone de test pour visualiser les splits de cross-validation ---
