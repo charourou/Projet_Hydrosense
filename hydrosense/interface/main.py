@@ -6,6 +6,7 @@ from colorama import Fore, Style
 from typing import Tuple
 
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error, max_error
+from sklearn.linear_model import Lasso
 
 from hydrosense.ml_logic.model import initialize_model, optimize_model, train_model, evaluate_model, predict_model
 from hydrosense.ml_logic.folding import get_folds
@@ -21,7 +22,7 @@ from hydrosense import params
 #  TODO : GERER PARAMS
 # ══════════════════════════════════════════════════════════════════════════════
 
-MODEL_TYPE = 'XGB'  # ['LASSO', 'BASE']
+MODEL_TYPE = 'LASSO'  # ['LASSO', 'BASE']
 
 DATA_PATH    = Path("data/piezo_bourdet_clean.csv")
 DATA_CODE_PIEZO = "BSS001QHYH"
@@ -185,6 +186,16 @@ def train(X_train_df: pd.DataFrame, y_train_df: pd.Series, optimize: bool = True
     -------
     (model, history)
     """
+
+    if MODEL_TYPE == 'LASSO':
+        print(Fore.MAGENTA + "\n⭐️ Use case: train (Mode Baseline Lasso)" + Style.RESET_ALL)
+        model = Lasso(alpha=0.1, random_state=42)
+        model.fit(X_train_df.values, y_train_df.values)
+
+        history = {}
+        print("✅ train() done — Modèle Lasso entraîné.\n")
+        return model, history
+
     print(Fore.MAGENTA + "\n⭐️ Use case: train" + Style.RESET_ALL)
 
     if optimize:
