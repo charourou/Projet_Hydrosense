@@ -17,9 +17,10 @@ from streamlit_folium import st_folium
 
 from utils.api_client import (
     API_URL,
-    load_catalog_interm,
-    load_catalog_map_dept,
+    load_catalog_ml,
+    load_catalog_ml_map,
     load_historique,
+    load_pluie,
     load_seuils_interm,
     seuils_from_row,
 )
@@ -28,7 +29,6 @@ from utils.theme import SEUIL_COLORS, DESIGN_TOKENS
 _SEUILS_FALLBACK: dict[str, float] = {
     "p95": 15.0, "p85": 13.4, "p20": 12.8, "p10": 12.0, "p5": 11.0,
 }
-DEPT_CARTE = "79"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # CSS
@@ -141,7 +141,7 @@ st.markdown("""
 # ══════════════════════════════════════════════════════════════════════════════
 # DONNÉES
 # ══════════════════════════════════════════════════════════════════════════════
-df_catalog = load_catalog_interm()
+df_catalog = load_catalog_ml()
 df_catalog["label"] = (
     df_catalog["bss_id"] + " — "
     + df_catalog["nom_commune"].fillna("?")
@@ -185,8 +185,8 @@ dept            = df_catalog.loc[df_catalog["label"] == selected_label, "code_de
 
 _seuils: dict[str, float] = load_seuils_interm(DATA_CODE_PIEZO) or _SEUILS_FALLBACK
 
-# Une seule requête BQ pour tous les markers
-df_map_dept = load_catalog_map_dept(DEPT_CARTE)
+# Tous les marqueurs ML (France entière)
+df_map_dept = load_catalog_ml_map()
 
 def _get_statut(val: float, seuils: dict) -> tuple[str, dict]:
     if val <= seuils["p5"]:    return "Crise",           SEUIL_COLORS["Crise"]
@@ -240,7 +240,7 @@ statut_nom, statut_colors = _get_statut(derniere_val, _seuils)
 # ══════════════════════════════════════════════════════════════════════════════
 # CARTE FOLIUM
 # ══════════════════════════════════════════════════════════════════════════════
-m = folium.Map(location=[46.4, -0.3], zoom_start=8, tiles="CartoDB Positron", prefer_canvas=True)
+m = folium.Map(location=[46.5, 2.5], zoom_start=6, tiles="CartoDB Positron", prefer_canvas=True)
 
 # Cacher tous les contrôles Leaflet (zoom + attribution)
 m.get_root().html.add_child(folium.Element("""
@@ -353,18 +353,34 @@ _svg_str = _buf.getvalue().decode("utf-8")
 _svg_clean = _svg_str[_svg_str.find("<svg"):]
 
 # ── Précipitations bars (calculé ici car réutilisé dans panel_html) ───────────
-precip_7j   = [2, 5, 11, 8, 3, 0, 0]
-days_labels = ["LUN", "MAR", "MER", "JEU", "VEN", "SAM", "DIM"]
-_max_p      = max(precip_7j) or 1
-bars_html   = ""
+_DAYS_FR = ["LUN", "MAR", "MER", "JEU", "VEN", "SAM", "DIM"]
+df_pluie_7j = load_pluie(DATA_CODE_PIEZO, days=7)
+if not df_pluie_7j.empty:
+    precip_7j   = df_pluie_7j["pu_synth"].tolist()
+    days_labels = [_DAYS_FR[d.weekday()] for d in df_pluie_7j["date_mesure"]]
+else:
+    precip_7j   = [0] * 7
+    days_labels = _DAYS_FR
+_abs_max = max(abs(v) for v in precip_7j) or 1
+_BAR_H = 22  # hauteur max de chaque demi-axe en px
+bars_html = ""
 for _p, _d in zip(precip_7j, days_labels):
-    _pbg = "#2484e5" if _p > 0 else "#e2e8f0"
-    _ph  = int(_p / _max_p * 36) + 2
+    _ph_pos = int(max(_p, 0) / _abs_max * _BAR_H)
+    _ph_neg = int(abs(min(_p, 0)) / _abs_max * _BAR_H)
+    _vc = "#2484e5" if _p > 0 else ("#f97316" if _p < 0 else "#94a3b8")
+    _vs = f"{_p:+.1f}" if _p != 0 else "0"
     bars_html += (
-        "<div style='display:flex;flex-direction:column;align-items:center;gap:3px;'>"
-        "<div style='width:6px;height:" + str(_ph) + "px;border-radius:3px;background:" + _pbg + ";'></div>"
-        "<span style='font-size:0.58rem;color:#94a3b8;'>" + str(_p) + "</span>"
-        "<span style='font-size:0.58rem;color:#cbd5e1;'>" + _d + "</span></div>"
+        "<div style='display:flex;flex-direction:column;align-items:center;gap:1px;'>"
+        f"<div style='width:6px;height:{_BAR_H}px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;'>"
+        + (f"<div style='width:6px;height:{_ph_pos}px;background:#2484e5;border-radius:3px 3px 0 0;'></div>" if _ph_pos > 0 else "")
+        + "</div>"
+        "<div style='width:10px;height:1px;background:#d1d5db;flex-shrink:0;'></div>"
+        f"<div style='width:6px;height:{_BAR_H}px;display:flex;flex-direction:column;justify-content:flex-start;align-items:center;'>"
+        + (f"<div style='width:6px;height:{_ph_neg}px;background:#f97316;border-radius:0 0 3px 3px;'></div>" if _ph_neg > 0 else "")
+        + "</div>"
+        f"<span style='font-size:0.58rem;color:{_vc};'>{_vs}</span>"
+        f"<span style='font-size:0.58rem;color:#cbd5e1;'>{_d}</span>"
+        "</div>"
     )
 
 # ── Panels HTML ───────────────────────────────────────────────────────────────
