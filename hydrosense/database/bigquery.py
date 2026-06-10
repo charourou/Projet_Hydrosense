@@ -3,23 +3,18 @@ import pandas as pd
 from google.cloud import bigquery
 from hydrosense.params import *
 
-#TABLE_ID   = "chroniques_piezo"
+TABLE_ID   = "chroniques_piezo"
 
 def load_piezo_bq(bss_id: str):
-    TABLE_ID = "pem_" + bss_id
-    print(TABLE_ID)
-    print("ok")
 
     table_ref = f"{GCP_PROJECT_ID}.{BQ_DATASET_ID}.{TABLE_ID}"
 
     query = f"""
-        SELECT date_mesure, niveau_nappe_eau,RR_synth
+        SELECT date_mesure, niveau_nappe_eau
         FROM `{table_ref}`
-
+        WHERE bss_id = '{bss_id}'
         ORDER BY date_mesure
     """
-
-# WHERE bss_id = '{bss_id}'
 
     client = bigquery.Client(project=GCP_PROJECT_ID)
     # Catch and ignore the specific BigQuery Storage API fallback warning
@@ -49,8 +44,6 @@ def load_pem_bq(bss_id: str):
         ORDER BY date_mesure
     """
 
-# WHERE bss_id = '{bss_id}' Ceci n'est pas un parquet
-
     client = bigquery.Client(project=GCP_PROJECT_ID)
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", module="google.cloud.bigquery")
@@ -67,6 +60,43 @@ def load_pem_bq(bss_id: str):
     print(f"PEM {bss_id} : {len(df)} lignes chargées")
 
     return df
+
+
+def load_plean(bss_id: str) -> pd.DataFrame:
+    """
+    Charge les données préparées pour le Machine Learning (Météo, PU, PCA)
+    depuis la table 'chroniques_plean' de BigQuery pour un piézomètre donné.
+    """
+    table_id = "chroniques_plean"
+    table_ref = f"{GCP_PROJECT_ID}.{BQ_DATASET_ID}.{table_id}"
+
+    query = f"""
+        SELECT *
+        FROM `{table_ref}`
+        WHERE bss_id = '{bss_id}'
+        ORDER BY date_mesure
+    """
+
+    client = bigquery.Client(project=GCP_PROJECT_ID)
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", module="google.cloud.bigquery")
+        df = client.query(query).to_dataframe()
+
+    if df.empty:
+        raise ValueError(f"❌ Aucune donnée ML trouvée pour {bss_id} dans la table {table_id}")
+
+    # Forcer le format de la date pour éviter les problèmes avec XGBoost/Pandas
+    df["date_mesure"] = pd.to_datetime(df["date_mesure"])
+    df.sort_values(by="date_mesure", inplace=True)
+    df.reset_index(drop=True, inplace=True)
+
+    print(f"✅ {bss_id} : {len(df)} lignes de features ML chargées.")
+
+    return df
+
+
+
 
 def info_piezo(bss_id: str, raw = False):
     """
