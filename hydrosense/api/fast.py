@@ -1,15 +1,20 @@
 import json
 
+import pandas as pd
+
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from google.cloud import bigquery
 
-from hydrosense.database.bigquery import load_piezo_bq
+from hydrosense.database.bigquery import load_piezo_bq, load_plean
 from hydrosense.params import BQ_DATASET_ID, GCP_PROJECT_ID
 from hydrosense.preprocess.cleaning import clean_piezo
-from hydrosense.preprocess.preprocessor import preprocess_week
-from hydrosense.interface.main import train, pred_future
+from hydrosense.preprocess.preprocessor import preprocess_week, make_preproc_week
+from hydrosense.interface.main import train, pred_future, pred
+
+
+
 
 load_dotenv(override=True)
 
@@ -176,16 +181,23 @@ def seuils(bss_id: str):
 @app.get("/predict")
 def predict(bss_id: str):
     """Prévision XGBoost autorégressive sur 13 semaines."""
-    df_raw = load_piezo_bq(bss_id)
-    df_clean = clean_piezo(df_raw)
-    df_w = preprocess_week(df_clean)
 
-    FEATURE_COLS = ["semaine", "lag_1", "lag_2", "lag_3", "lag_4", "lag_52", "moyenne_3w", "moyenne_6w"]
-    X_train = df_w[FEATURE_COLS]
-    y_train = df_w["niveau_nappe_eau"]
-    model, _ = train(X_train, y_train, optimize=False)
+    df_clean = load_plean(bss_id)
+    Xt, Xe, yt, ye, scaler = make_preproc_week(df_clean)
+    # TODO :
+    # entrainer le modele sur toute la donnée ???
+    # MAIS ON NE PEUT PAS MODIFIER FACILEMENT TRAIN TEST START ET END
 
-    forecast = pred_future(model, df_w, n_weeks=13)
+
+    # On s'entraine sur toute la donnée on n'a pas le controle sur le début de la prédiction.
+    # On recombine train et test ensemble.
+    Xtot = pd.concat([Xt, Xe])
+    ytot = pd.concat([yt, ye])
+
+
+    model, _ = train(Xtot, ytot, optimize=False)
+
+    forecast = pred_future(model, Xtot, n_weeks=13)
 
     return {
         "bss_id": bss_id,
