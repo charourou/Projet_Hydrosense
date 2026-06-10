@@ -31,8 +31,23 @@ DATE_COL     = "date_mesure"
 #FEATURE_COLS = ["mois", "lag_1", "lag_2", "lag_3", "lag_12", "moyenne_3m", "moyenne_6m"]
 #FEATURE_COLS = ["semaine", "lag_1", "lag_2", "lag_3", "lag_12", "moyenne_3m", "moyenne_6m"]
 #FEATURE_COLS = ["semaine", "lag_1", "lag_2", "lag_3","lag_4" ,"lag_52", "moyenne_3w", "moyenne_6w","RR_lag_1","RR_lag_2","RR_moy_4w"]
-FEATURE_COLS = ["semaine_sin","semaine_cos", "lag_1", "lag_2", "lag_3","lag_4" ,"lag_52", "moyenne_3w", "moyenne_6w","RR_synth"]
+#FEATURE_COLS = ["semaine_sin","semaine_cos", "lag_1", "lag_2", "lag_3","lag_4" ,"lag_52", "moyenne_3w", "moyenne_6w","RR_synth"]
 #FEATURE_COLS = ["semaine_sin","semaine_cos", "lag_1","lag_4" ,"lag_52", "moyenne_3w", "moyenne_6w","RR_lag_1","RR_lag_2","RR_moy_4w"]
+FEATURE_COLS = [
+    # Saisonnalité cyclique pure
+    "semaine_sin", "semaine_cos",
+
+    # Historique de la nappe (Target)
+    "lag_1", "lag_2", "lag_3", "lag_4", "lag_52",
+
+    # Uniquement le lag 1 pour les PC
+    "PC1_lag_1",
+    "PC2_lag_1",
+    "PC3_lag_1",
+
+    # Lags 1 à 4 pour PU_synth
+    "PU_synth_lag_1", "PU_synth_lag_2", "PU_synth_lag_3", "PU_synth_lag_4"
+]
 
 # A revoir
 # FEATURE_COLS = ["mois", "mois_sin", "mois_cos", "semaine",
