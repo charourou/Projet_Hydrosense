@@ -176,6 +176,8 @@ if __name__ == "__main__":
     X_train, X_test= split_lagged_data(X_lagged)
     # On a perdu le y )
     _, _, y_train, y_test = split_data(df_w)
+    # CLIPPER LES DONNES SUR 
+
 
     # Scaling
     X_train_scaled, X_test_scaled, scaler, _ = scale_feats(X_train_df = X_train, X_test_df= X_test)

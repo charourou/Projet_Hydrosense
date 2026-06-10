@@ -10,10 +10,13 @@ from sklearn.linear_model import Lasso
 
 from hydrosense.ml_logic.model import initialize_model, optimize_model, train_model, evaluate_model, predict_model
 from hydrosense.ml_logic.folding import get_folds
+from hydrosense.ml_logic.baseline import BaselineLastYear
+
 
 from hydrosense.database.bigquery import load_piezo_bq, load_plean
 from hydrosense.preprocess.cleaning import clean_piezo, clean_piezo2
 from hydrosense.preprocess.preprocessor import preprocess_week
+
 
 from hydrosense import params
 
@@ -71,7 +74,7 @@ def load_data(path: Path = DATA_PATH) -> pd.DataFrame:
 
 def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     """
-    - Rééchantillonne les données journalières en moyennes mensuelles
+    - Rééchantillonne les données journalières en moyennes MENSUELLES
     - Construit les features de lag et moyennes mobiles pour XGBoost
     - Supprime les lignes avec NaN (dues aux shifts)
 
@@ -102,6 +105,8 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     return df_ml
 
 def preprocess_slim(df: pd.DataFrame) -> pd.DataFrame:
+    """ DONNEES MENSUELLES"""
+
     y_mensuel = df[params.TARGET_COL].resample("ME").mean()
 
     # Feature engineering
@@ -118,7 +123,6 @@ def preprocess_slim(df: pd.DataFrame) -> pd.DataFrame:
 
     print(f"Preprocess SLIM done — {len(df_ml)} mois | {df_ml.shape[1]} colonnes\n")
     return df_ml
-
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -187,8 +191,17 @@ def train(X_train_df: pd.DataFrame, y_train_df: pd.Series, optimize: bool = True
     (model, history)
     """
 
+# ════════════ CAS 1 : BASELINE NAÏVE ════════════
+    if MODEL_TYPE == 'BASE':
+        print("⏳ Initialisation de la persistance annuelle (J-365)...")
+        model = BaselineLastYear()
+        # On lui passe les DataFrames complets avec les index temporels intacts
+        model.fit(X_train_df, y_train_df)
+        print("✅ train() done — Baseline prête.")
+
+# =============================================================================================
     if MODEL_TYPE == 'LASSO':
-        print(Fore.MAGENTA + "\n⭐️ Use case: train (Mode Baseline Lasso)" + Style.RESET_ALL)
+        print(Fore.MAGENTA + "\nUse case: train (Mode Baseline Lasso)" + Style.RESET_ALL)
         model = Lasso(alpha=0.1, random_state=42)
         model.fit(X_train_df.values, y_train_df.values)
 
@@ -196,35 +209,37 @@ def train(X_train_df: pd.DataFrame, y_train_df: pd.Series, optimize: bool = True
         print("✅ train() done — Modèle Lasso entraîné.\n")
         return model, history
 
-    print(Fore.MAGENTA + "\n⭐️ Use case: train" + Style.RESET_ALL)
+    print(Fore.MAGENTA + "\nUse case: train" + Style.RESET_ALL)
 
-    if optimize:
-        model, best_params = optimize_model(
-            X_train_df.values, # Les valeurs NumPy pour l'entraînement du modèle
-            y_train_df.values, # Les valeurs NumPy pour l'entraînement du modèle
-            X_train_df_for_folds=X_train_df, # Le DataFrame pour la génération des folds
-            # date_column_name=DATE_COL,  # Plus nécessaire car optimize_model ne le passe plus à get_folds
-            n_splits_cv=3,
-            val_months_duration=3 # Durée de la validation en mois pour la CV
-        )
-        print(Fore.BLUE + f"\nBest params: {best_params}" + Style.RESET_ALL)
-    else:
-        #on lui passe des hyperparametres de qualité
-        model = initialize_model(n_estimators= 1000,
-                                 learning_rate= 0.1,
-                                 max_depth=2,
-                                 subsample=0.8,
-                                 colsample_bytree =0.6,
-                                 min_child_weight=5,
-                                 random_state = 42)
+# =============================================================================================
+    if MODEL_TYPE == 'XGBoost':
+        print(Fore.MAGENTA + "\n⭐️ Use case: train (Mode XGBoost)" + Style.RESET_ALL)
+        if optimize:
+            model, best_params = optimize_model(
+                X_train_df.values, # Les valeurs NumPy pour l'entraînement du modèle
+                y_train_df.values, # Les valeurs NumPy pour l'entraînement du modèle
+                X_train_df_for_folds=X_train_df, # Le DataFrame pour la génération des folds
+                # date_column_name=DATE_COL,  # Plus nécessaire car optimize_model ne le passe plus à get_folds
+                n_splits_cv=3,
+                val_months_duration=3 # Durée de la validation en mois pour la CV
+            )
+            print(Fore.BLUE + f"\nBest params: {best_params}" + Style.RESET_ALL)
+        else:
+            #on lui passe des hyperparametres de qualité
+            model = initialize_model(n_estimators= 1000,
+                                    learning_rate= 0.1,
+                                    max_depth=2,
+                                    subsample=0.8,
+                                    colsample_bytree =0.6,
+                                    min_child_weight=5,
+                                    random_state = 42)
 
-    model, history = train_model(model, X_train_df.values, y_train_df.values)
+        model, history = train_model(model, X_train_df.values, y_train_df.values)
 
-    print("✅ train() done \n")
-    return model, history
+        print("✅ train() done \n")
+        return model, history
 
 
-# ══════════════════════════════════════════════════════════════════════════════
 # 5. EVALUATE
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -313,7 +328,7 @@ def evaluate_deeper(X_df: pd.DataFrame, y_df: pd.Series, splits,
     return metrics_df, all_predictions
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 6. PREDICT — prévision 13 prochaines semaines
+# 6. PREDICT — prévision sur 13 prochaines semaines
 # ══════════════════════════════════════════════════════════════════════════════
 
 
