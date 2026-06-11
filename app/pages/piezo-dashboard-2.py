@@ -62,7 +62,7 @@ st.markdown("""
         z-index: 1001;
         display: flex;
         flex-direction: column;
-        gap: 10px;
+        gap: 13px;
         pointer-events: all;
     }
 
