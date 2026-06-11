@@ -57,7 +57,7 @@ st.markdown("""
     /* ── Panel gauche : empilé en fixed, top:72px pour passer sous la navbar ── */
     .panel-left {
         position: fixed;
-        top: 72px; left: 16px;
+        top: 60px; left: 16px;
         width: 344px;
         z-index: 1001;
         display: flex;
@@ -97,8 +97,8 @@ st.markdown("""
     /* ── Selectbox dans le chips-row du header ── */
     [data-testid="stSelectbox"] {
         position: fixed !important;
-        top: 167px; left: 32px;
-        width: 312px !important;
+        top: 155px; left: 32px;
+        width: 250px !important;
         z-index: 1002;
         pointer-events: all;
     }

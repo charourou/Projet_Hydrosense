@@ -30,8 +30,8 @@ pages = {
         # st.Page("pages/piezo.py",             title="📈 Données piézométriques"),
         st.Page("pages/catalogue.py",         title="🗂️ Catalogue"),
         st.Page("pages/carte.py",             title="🗺️ Carte des piézos"),
-        st.Page("pages/dashboard-piezo-maquette.py", title="🖌️ Dashboard-piezo-maquette"),
-        st.Page("pages/dashboard-carte-maquette.py", title="🖌️ Dashboard-carte-maquette"),
+        # st.Page("pages/dashboard-piezo-maquette.py", title="🖌️ Dashboard-piezo-maquette"),
+        # st.Page("pages/dashboard-carte-maquette.py", title="🖌️ Dashboard-carte-maquette"),
     ]
 }
 
