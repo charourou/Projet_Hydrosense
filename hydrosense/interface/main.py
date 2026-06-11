@@ -29,7 +29,27 @@ MODEL_TYPE = 'LASSO'  # ['LASSO', 'BASE', 'XGB']
 DATA_PATH    = Path("data/piezo_bourdet_clean.csv")
 DATA_CODE_PIEZO = "BSS001QHYH"
 DATE_COL     = "date_mesure"
+#FEATURE_COLS = ["mois", "lag_1", "lag_2", "lag_3", "lag_12", "moyenne_3m", "moyenne_6m"]
+#FEATURE_COLS = ["semaine", "lag_1", "lag_2", "lag_3", "lag_12", "moyenne_3m", "moyenne_6m"]
+#FEATURE_COLS = ["semaine", "lag_1", "lag_2", "lag_3","lag_4" ,"lag_52", "moyenne_3w", "moyenne_6w","RR_lag_1","RR_lag_2","RR_moy_4w"]
+#FEATURE_COLS = ["semaine_sin","semaine_cos", "lag_1", "lag_2", "lag_3","lag_4" ,"lag_52", "moyenne_3w", "moyenne_6w","RR_synth"]
+#FEATURE_COLS = ["semaine_sin","semaine_cos", "lag_1","lag_4" ,"lag_52", "moyenne_3w", "moyenne_6w","RR_lag_1","RR_lag_2","RR_moy_4w"]
+FEATURE_COLS = [
+    # Saisonnalité cyclique pure
+    "semaine_sin", "semaine_cos",
 
+    # Historique de la nappe (Target)
+    "lag_1", "lag_2", "lag_3", "lag_4", "lag_52",
+
+    # Uniquement le lag 1 pour les PC
+    "PC1_lag_1",
+    "PC2_lag_1",
+    "PC3_lag_1",
+
+    # Lags 1 à 4 pour PU_synth
+    "PU_synth_lag_1", "PU_synth_lag_2", "PU_synth_lag_3", "PU_synth_lag_4"
+]
+FEATURE_COLS = ["semaine_sin","semaine_cos", "lag_1", "lag_2", "lag_3","lag_4" ,"lag_52", "moyenne_3w", "moyenne_6w","RR_synth"]
 FEATURE_COLS = ["semaine_sin","semaine_cos", "PU_synth", "PC1", "PC2", "PC3"]
 
 
@@ -385,6 +405,12 @@ def pred_future(model, df_ml: pd.DataFrame, n_weeks: int = 13) -> pd.Series:
     """
     print(Fore.MAGENTA + "\n⭐️ Use case: pred_future" + Style.RESET_ALL)
 
+    TRAINING_FEATURES = ['semaine_sin', 'semaine_cos', 'niveau_nappe_eau_lag_1',
+       'niveau_nappe_eau_lag_2', 'niveau_nappe_eau_lag_3',
+       'niveau_nappe_eau_lag_4', 'niveau_nappe_eau_lag_52', 'PC1_lag_1',
+       'PC2_lag_1', 'PC3_lag_1', 'PU_synth_lag_1', 'PU_synth_lag_2',
+       'PU_synth_lag_3', 'PU_synth_lag_4']
+
     df_future = df_ml.copy()
     predictions = []
 
@@ -399,16 +425,24 @@ def pred_future(model, df_ml: pd.DataFrame, n_weeks: int = 13) -> pd.Series:
         y_next = predict_model(model, last_row)[0]
         next_date = df_future.index[-1] + pd.Timedelta(weeks=1)
 
-        new_row = pd.DataFrame(
-            {
-            "semaine_sin":    [np.sin(2 * np.pi) * next_date.isocalendar().week / next_date.isocalendar().week],
+        new_row = pd.DataFrame({
+            "niveau_nappe_eau": [y_next],
+            "semaine_sin":    [df_future["semaine_sin"]],
+            "semaine_cos":    [df_future["semaine_cos"]],
             "niveau_nappe_eau_lag_1":      [y_next],
-            "niveau_nappe_eau_lag_2":      [df_future["niveau_nappe_eau_lag_1"].iloc[-1]],
-            "niveau_nappe_eau_lag_3":      [df_future["niveau_nappe_eau_lag_2"].iloc[-1]],
-            "niveau_nappe_eau_lag_4":      [df_future["niveau_nappe_eau_lag_3"].iloc[-1]],
-            "niveau_nappe_eau_lag_52":      [0] , # OUILLLE OOUILLLE
-        }
-        , index=[next_date])
+            "niveau_nappe_eau_lag_2":      [df_future["niveau_nappe_eau"].iloc[-1]],
+            "niveau_nappe_eau_lag_3":      [df_future["niveau_nappe_eau"].iloc[-2]],
+            "niveau_nappe_eau_lag_4":      [df_future["niveau_nappe_eau"].iloc[-3]],
+            "niveau_nappe_eau_lag_52":     [df_future["niveau_nappe_eau"].iloc[-51]],
+            "PC1_lag_1": [df_future["PC1"].iloc[-1]],
+            "PC2_lag_1": [df_future["PC2"].iloc[-1]],
+            "PC3_lag_1": [df_future["PC3"].iloc[-1]],
+            "PU_synth_lag_1" :[df_future["PU_synth"].iloc[-1]],
+            "PU_synth_lag_2" :[df_future["PU_synth"].iloc[-2]],
+            "PU_synth_lag_3" :[df_future["PU_synth"].iloc[-3]],
+            "PU_synth_lag_4" :[df_future["PU_synth"].iloc[-4]],
+
+        }, index=[next_date])
 
         df_future = pd.concat([df_future, new_row])
         predictions.append((next_date, round(float(y_next), 3)))

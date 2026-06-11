@@ -17,10 +17,10 @@ from streamlit_folium import st_folium
 
 from utils.api_client import (
     API_URL,
-    load_catalog_interm,
-    load_catalog_map_dept,
+    load_catalog_ml,
+    load_catalog_ml_map,
     load_historique,
-    load_seuils_interm,
+    load_pluie,
     seuils_from_row,
 )
 from utils.theme import SEUIL_COLORS, DESIGN_TOKENS
@@ -28,7 +28,6 @@ from utils.theme import SEUIL_COLORS, DESIGN_TOKENS
 _SEUILS_FALLBACK: dict[str, float] = {
     "p95": 15.0, "p85": 13.4, "p20": 12.8, "p10": 12.0, "p5": 11.0,
 }
-DEPT_CARTE = "79"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # CSS
@@ -95,18 +94,27 @@ st.markdown("""
     .chart-legend{ display: flex; gap: 14px; margin-top: 5px; font-size: 0.71rem; color: #64748b; }
     .leg-line    { display: inline-block; width: 18px; height: 2px; vertical-align: middle; margin-right: 3px; background: #2484e5; }
 
-    /* ── Selectbox repositionné dans le header ── */
+    /* ── Selectbox dans le chips-row du header ── */
     [data-testid="stSelectbox"] {
         position: fixed !important;
-        top: 76px; left: 16px;
-        width: 344px !important;
+        top: 167px; left: 32px;
+        width: 312px !important;
         z-index: 1002;
         pointer-events: all;
-        /* sera rendu invisible par opacity car le panel-left a son propre header visuel */
-        opacity: 0;
-        pointer-events: all;
     }
-    /* On rend le selectbox visible uniquement (hack : on utilise un label custom dans le panel HTML) */
+    [data-testid="stSelectbox"] label { display: none !important; }
+    [data-testid="stSelectbox"] [data-baseweb="select"] > div {
+        background: #eff6ff !important;
+        border: 1.5px solid #2484e5 !important;
+        border-radius: 999px !important;
+        padding: 2px 10px !important;
+        min-height: 26px !important;
+        font-size: 0.77rem !important;
+        font-weight: 500 !important;
+        color: #2484e5 !important;
+        box-shadow: none !important;
+        cursor: pointer !important;
+    }
 
     /* stVegaLiteChart : pas de positionnement fixed (géré via Vega-Embed inline) */
     [data-testid="stVegaLiteChart"] {
@@ -141,7 +149,7 @@ st.markdown("""
 # ══════════════════════════════════════════════════════════════════════════════
 # DONNÉES
 # ══════════════════════════════════════════════════════════════════════════════
-df_catalog = load_catalog_interm()
+df_catalog = load_catalog_ml()
 df_catalog["label"] = (
     df_catalog["bss_id"] + " — "
     + df_catalog["nom_commune"].fillna("?")
@@ -183,10 +191,13 @@ nom_commune     = df_catalog.loc[df_catalog["label"] == selected_label, "nom_com
 nom_departement = df_catalog.loc[df_catalog["label"] == selected_label, "nom_departement"].iloc[0] or "?"
 dept            = df_catalog.loc[df_catalog["label"] == selected_label, "code_departement"].iloc[0] or "?"
 
-_seuils: dict[str, float] = load_seuils_interm(DATA_CODE_PIEZO) or _SEUILS_FALLBACK
+# Tous les marqueurs ML (France entière) — chargé avant _seuils pour en extraire les percentiles
+df_map_dept = load_catalog_ml_map()
 
-# Une seule requête BQ pour tous les markers
-df_map_dept = load_catalog_map_dept(DEPT_CARTE)
+_map_row = df_map_dept[df_map_dept["bss_id"] == DATA_CODE_PIEZO]
+_seuils: dict[str, float] = (
+    seuils_from_row(_map_row.iloc[0]) if not _map_row.empty else None
+) or _SEUILS_FALLBACK
 
 def _get_statut(val: float, seuils: dict) -> tuple[str, dict]:
     if val <= seuils["p5"]:    return "Crise",           SEUIL_COLORS["Crise"]
@@ -214,8 +225,8 @@ with st.spinner("Chargement des données historiques..."):
 with st.spinner("Chargement de la prévision via l'API..."):
     result = get_forecast(DATA_CODE_PIEZO)
 
-deux_ans = pd.Timestamp.today() - pd.Timedelta(days=365 * 2)
-df_hist_filtre = df_clean[df_clean["date_mesure"] >= deux_ans]
+six_mois = pd.Timestamp.today() - pd.Timedelta(days=182)
+df_hist_filtre = df_clean[df_clean["date_mesure"] >= six_mois]
 
 df_pred_val = pd.DataFrame(result["prévision"])
 df_pred_val["date_mesure"]      = pd.to_datetime(df_pred_val["date"])
@@ -240,7 +251,7 @@ statut_nom, statut_colors = _get_statut(derniere_val, _seuils)
 # ══════════════════════════════════════════════════════════════════════════════
 # CARTE FOLIUM
 # ══════════════════════════════════════════════════════════════════════════════
-m = folium.Map(location=[46.4, -0.3], zoom_start=8, tiles="CartoDB Positron", prefer_canvas=True)
+m = folium.Map(location=[46.5, 2.5], zoom_start=6, tiles="CartoDB Positron", prefer_canvas=True)
 
 # Cacher tous les contrôles Leaflet (zoom + attribution)
 m.get_root().html.add_child(folium.Element("""
@@ -314,19 +325,22 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as _plt
 import matplotlib.patches as _mpatches
+import matplotlib.dates as _mdates
 from io import BytesIO as _BytesIO
 import base64 as _b64
 
-_fig, _ax = _plt.subplots(figsize=(4.6, 1.2))
+_fig, _ax = _plt.subplots(figsize=(4.6, 1.5), layout="constrained")
 _fig.patch.set_alpha(0)
 _ax.set_facecolor("none")
 
 # Bandes de seuil
 _seuil_bands = [
-    (_seuils["p5"],  _seuils["p10"], SEUIL_COLORS["Alerte"]["bg"]),
-    (_seuils["p10"], _seuils["p20"], SEUIL_COLORS["Vigilance"]["bg"]),
-    (_seuils["p20"], _seuils["p85"], SEUIL_COLORS["Normal"]["bg"]),
-    (_seuils["p85"], _seuils["p95"], SEUIL_COLORS["Modérément haut"]["bg"]),
+    (y_lo,             _seuils["p5"],  SEUIL_COLORS["Crise"]["bg"]),
+    (_seuils["p5"],    _seuils["p10"], SEUIL_COLORS["Alerte"]["bg"]),
+    (_seuils["p10"],   _seuils["p20"], SEUIL_COLORS["Vigilance"]["bg"]),
+    (_seuils["p20"],   _seuils["p85"], SEUIL_COLORS["Normal"]["bg"]),
+    (_seuils["p85"],   _seuils["p95"], SEUIL_COLORS["Modérément haut"]["bg"]),
+    (_seuils["p95"],   y_hi,           SEUIL_COLORS["Très haut"]["bg"]),
 ]
 _x_lo = _dates_hist[0]
 _x_hi = _dates_pred[min(29, len(_dates_pred) - 1)]
@@ -342,8 +356,16 @@ _ax.plot([_today], [derniere_val], "o", color="#2484e5", markersize=4, zorder=5)
 
 _ax.set_xlim(_x_lo, _x_hi)
 _ax.set_ylim(y_lo, y_hi)
-_ax.axis("off")
-_fig.tight_layout(pad=0)
+
+# Axe X : mois en abrégé
+_ax.xaxis.set_major_locator(_mdates.MonthLocator())
+_ax.xaxis.set_major_formatter(_mdates.DateFormatter("%b"))
+_ax.tick_params(axis="x", labelsize=6.5, colors="#94a3b8", length=0, pad=2)
+_ax.tick_params(axis="y", labelsize=6.5, colors="#94a3b8", length=0, pad=2)
+_ax.yaxis.set_major_locator(_plt.MaxNLocator(nbins=4, prune="both"))
+_ax.yaxis.set_major_formatter(_plt.FuncFormatter(lambda v, _: f"{v:.1f}"))
+for _sp in ["top", "right", "bottom", "left"]:
+    _ax.spines[_sp].set_visible(False)
 
 _buf = _BytesIO()
 _fig.savefig(_buf, format="svg", bbox_inches="tight", transparent=True)
@@ -353,18 +375,34 @@ _svg_str = _buf.getvalue().decode("utf-8")
 _svg_clean = _svg_str[_svg_str.find("<svg"):]
 
 # ── Précipitations bars (calculé ici car réutilisé dans panel_html) ───────────
-precip_7j   = [2, 5, 11, 8, 3, 0, 0]
-days_labels = ["LUN", "MAR", "MER", "JEU", "VEN", "SAM", "DIM"]
-_max_p      = max(precip_7j) or 1
-bars_html   = ""
+_DAYS_FR = ["LUN", "MAR", "MER", "JEU", "VEN", "SAM", "DIM"]
+df_pluie_7j = load_pluie(DATA_CODE_PIEZO, days=7)
+if not df_pluie_7j.empty:
+    precip_7j   = df_pluie_7j["pu_synth"].tolist()
+    days_labels = [_DAYS_FR[d.weekday()] for d in df_pluie_7j["date_mesure"]]
+else:
+    precip_7j   = [0] * 7
+    days_labels = _DAYS_FR
+_abs_max = max(abs(v) for v in precip_7j) or 1
+_BAR_H = 22  # hauteur max de chaque demi-axe en px
+bars_html = ""
 for _p, _d in zip(precip_7j, days_labels):
-    _pbg = "#2484e5" if _p > 0 else "#e2e8f0"
-    _ph  = int(_p / _max_p * 36) + 2
+    _ph_pos = int(max(_p, 0) / _abs_max * _BAR_H)
+    _ph_neg = int(abs(min(_p, 0)) / _abs_max * _BAR_H)
+    _vc = "#2484e5" if _p > 0 else ("#f97316" if _p < 0 else "#94a3b8")
+    _vs = f"{_p:+.1f}" if _p != 0 else "0"
     bars_html += (
-        "<div style='display:flex;flex-direction:column;align-items:center;gap:3px;'>"
-        "<div style='width:6px;height:" + str(_ph) + "px;border-radius:3px;background:" + _pbg + ";'></div>"
-        "<span style='font-size:0.58rem;color:#94a3b8;'>" + str(_p) + "</span>"
-        "<span style='font-size:0.58rem;color:#cbd5e1;'>" + _d + "</span></div>"
+        "<div style='display:flex;flex-direction:column;align-items:center;gap:1px;'>"
+        f"<div style='width:6px;height:{_BAR_H}px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;'>"
+        + (f"<div style='width:6px;height:{_ph_pos}px;background:#2484e5;border-radius:3px 3px 0 0;'></div>" if _ph_pos > 0 else "")
+        + "</div>"
+        "<div style='width:10px;height:1px;background:#d1d5db;flex-shrink:0;'></div>"
+        f"<div style='width:6px;height:{_BAR_H}px;display:flex;flex-direction:column;justify-content:flex-start;align-items:center;'>"
+        + (f"<div style='width:6px;height:{_ph_neg}px;background:#f97316;border-radius:0 0 3px 3px;'></div>" if _ph_neg > 0 else "")
+        + "</div>"
+        f"<span style='font-size:0.58rem;color:{_vc};'>{_vs}</span>"
+        f"<span style='font-size:0.58rem;color:#cbd5e1;'>{_d}</span>"
+        "</div>"
     )
 
 # ── Panels HTML ───────────────────────────────────────────────────────────────
@@ -394,7 +432,7 @@ panel_html = (
     '<div class="breadcrumb"><span>Poitou-Charentes</span>'
     '<span style="color:#cbd5e1;">›</span>'
     '<span style="color:#1e293b;font-weight:600;">' + nom_commune + '</span></div>'
-    '<div class="chips-row"><span class="chip active">' + nom_commune + '</span></div>'
+    '<div class="chips-row" style="min-height:30px;"></div>'
     '<div class="meta-row">'
     '<span class="meta-tag">' + dept + ' · ' + nom_departement + '</span>'
     '<span class="meta-tag">Nappe libre</span>'
@@ -471,10 +509,12 @@ st.markdown(f"""
 
 # ── Seuils réglementaires (card fixe bas-droite, au-dessus de la KPI row) ─────
 _seuils_display = [
-    ("Normal",    f"< {_seuils['p20']:.1f} m",                               SEUIL_COLORS["Normal"]),
-    ("Vigilance", f"{_seuils['p20']:.1f} – {_seuils['p10']:.1f} m",          SEUIL_COLORS["Vigilance"]),
-    ("Alerte",    f"{_seuils['p10']:.1f} – {_seuils['p5']:.1f} m",           SEUIL_COLORS["Alerte"]),
-    ("Crise",     f"> {_seuils['p5']:.1f} m",                                 SEUIL_COLORS["Crise"]),
+    ("Très haut",       f"> {_seuils['p95']:.1f} m",                               SEUIL_COLORS["Très haut"]),
+    ("Modérément haut", f"{_seuils['p85']:.1f} – {_seuils['p95']:.1f} m",          SEUIL_COLORS["Modérément haut"]),
+    ("Normal",          f"{_seuils['p20']:.1f} – {_seuils['p85']:.1f} m",          SEUIL_COLORS["Normal"]),
+    ("Vigilance",       f"{_seuils['p10']:.1f} – {_seuils['p20']:.1f} m",          SEUIL_COLORS["Vigilance"]),
+    ("Alerte",          f"{_seuils['p5']:.1f} – {_seuils['p10']:.1f} m",           SEUIL_COLORS["Alerte"]),
+    ("Crise",           f"< {_seuils['p5']:.1f} m",                                SEUIL_COLORS["Crise"]),
 ]
 _seuils_rows_html = ""
 for _nom, _lim, _col in _seuils_display:

@@ -51,6 +51,18 @@ def load_catalog_interm() -> pd.DataFrame:
 
 
 @st.cache_data
+def load_catalog_ml() -> pd.DataFrame:
+    """Catalogue filtré sur les piézomètres avec données ML (chroniques_plean)."""
+    return pd.DataFrame(_get("/catalogue/ml").json())
+
+
+@st.cache_data
+def load_catalog_ml_map() -> pd.DataFrame:
+    """Piézomètres ML (France entière) avec coordonnées GPS et seuils percentiles."""
+    return pd.DataFrame(_get("/catalogue/ml/map").json())
+
+
+@st.cache_data
 def load_single_piezo_map(bss_id: str) -> pd.DataFrame:
     try:
         row = _get(f"/piezo/{bss_id}/map").json()
@@ -83,6 +95,21 @@ def seuils_from_row(row: pd.Series) -> dict | None:
     if row[cols].isnull().any():
         return None
     return {key: float(row[col]) for key, col in PERCENTILE_COLS.items()}
+
+
+# ── Précipitations ────────────────────────────────────────────────────────────
+
+@st.cache_data
+def load_pluie(bss_id: str, days: int = 30) -> pd.DataFrame:
+    """Précipitations (pluie_mm) depuis chroniques_plean via l'API."""
+    try:
+        data = _get(f"/piezo/{bss_id}/pluie", days=days).json()
+        df = pd.DataFrame(data["pluie"])
+        df.rename(columns={"date": "date_mesure"}, inplace=True)
+        df["date_mesure"] = pd.to_datetime(df["date_mesure"])
+        return df
+    except requests.HTTPError:
+        return pd.DataFrame(columns=["date_mesure", "pu_synth"])
 
 
 # ── Historique ────────────────────────────────────────────────────────────────

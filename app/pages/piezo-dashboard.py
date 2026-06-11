@@ -10,7 +10,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from utils.api_client import load_single_piezo_map, load_catalog_interm, load_seuils_interm, load_historique, API_URL
+from utils.api_client import load_single_piezo_map, load_catalog_ml, load_seuils_interm, load_historique, load_pluie, API_URL
 from utils.theme import SEUIL_COLORS, SEUIL_ORDER, DESIGN_TOKENS
 
 # ── Fallback seuils quand BQ ne retourne rien ────────────────────────────────
@@ -25,7 +25,7 @@ _SEUILS_FALLBACK: dict[str, float] = {
 # ══════════════════════════════════════════════════════════════════════════════
 # SÉLECTEUR PIÉZOMÈTRE
 # ══════════════════════════════════════════════════════════════════════════════
-df_catalog = load_catalog_interm()
+df_catalog = load_catalog_ml()
 
 df_catalog["label"] = (
     df_catalog["bss_id"]
@@ -63,20 +63,28 @@ def get_historique(bss_id: str) -> pd.DataFrame:
 
 
 @st.cache_data
-def get_forecast(bss_id: str) -> dict:
+def get_forecast(bss_id: str) -> dict | None:
     response = requests.get(
         f"{API_URL}/predict",
         params={"bss_id": bss_id}
     )
+    if response.status_code == 404:
+        return None
     response.raise_for_status()
     return response.json()
 
+
+df_pluie_30j = load_pluie(DATA_CODE_PIEZO, days=30)
 
 with st.spinner("Chargement des données historiques..."):
     df_clean = get_historique(DATA_CODE_PIEZO)
 
 with st.spinner("Chargement de la prévision via l'API..."):
     result = get_forecast(DATA_CODE_PIEZO)
+
+if result is None:
+    st.warning(f"Aucune donnée ML disponible pour {DATA_CODE_PIEZO} — prévision indisponible.")
+    st.stop()
 
 df_piezo_unique = load_single_piezo_map(DATA_CODE_PIEZO)
 
@@ -314,12 +322,18 @@ with col_droite:
             delta_color="normal" if variation_prev > 0 else "inverse"
         )
     with kpi_col4:
-        st.metric(
-            label="PRÉCIPITATIONS 15 J",
-            value="— mm",
-            delta="données à venir",
-            delta_color="off"
-        )
+        if df_pluie_30j.empty or len(df_pluie_30j) < 2:
+            st.metric(label="PLUIE UTILE 15 J", value="N/D", delta_color="off")
+        else:
+            recent   = df_pluie_30j["pu_synth"].iloc[-15:].sum()
+            older    = df_pluie_30j["pu_synth"].iloc[:-15].sum()
+            delta_pu = recent - older
+            st.metric(
+                label="PLUIE UTILE 15 J",
+                value=f"{recent:.1f} mm",
+                delta=f"{delta_pu:+.1f} mm vs j-30",
+                delta_color="normal",
+            )
 
     st.write("")
 
