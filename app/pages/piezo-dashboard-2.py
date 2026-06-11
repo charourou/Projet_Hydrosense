@@ -98,7 +98,7 @@ st.markdown("""
     [data-testid="stSelectbox"] {
         position: fixed !important;
         top: 167px; left: 32px;
-        width: 312px !important;
+        width: 249px !important;
         z-index: 1002;
         pointer-events: all;
     }
@@ -251,7 +251,9 @@ statut_nom, statut_colors = _get_statut(derniere_val, _seuils)
 # ══════════════════════════════════════════════════════════════════════════════
 # CARTE FOLIUM
 # ══════════════════════════════════════════════════════════════════════════════
-m = folium.Map(location=[46.5, 2.5], zoom_start=6, tiles="CartoDB Positron", prefer_canvas=True)
+_center_lat = float(_map_row.iloc[0]["y"]) if not _map_row.empty else 46.5
+_center_lon = float(_map_row.iloc[0]["x"]) if not _map_row.empty else 2.5
+m = folium.Map(location=[_center_lat, _center_lon], zoom_start=8, tiles="CartoDB Positron", prefer_canvas=True)
 
 # Cacher tous les contrôles Leaflet (zoom + attribution)
 m.get_root().html.add_child(folium.Element("""
@@ -290,7 +292,7 @@ for _, row in df_map_dept.iterrows():
 map_data = st_folium(
     m,
     width=None,
-    height=900,
+    height=1200,
     returned_objects=["last_object_clicked_tooltip"],
     key="map_fs",
 )
@@ -429,9 +431,7 @@ panel_html = (
     '<div><div class="hc-title">Hydro-Sense</div>'
     '<div class="hc-sub">Surveillance piézométrique</div></div>'
     '</div>'
-    '<div class="breadcrumb"><span>Poitou-Charentes</span>'
-    '<span style="color:#cbd5e1;">›</span>'
-    '<span style="color:#1e293b;font-weight:600;">' + nom_commune + '</span></div>'
+    '<div class="breadcrumb"><span>Poitou-Charentes</span></div>'
     '<div class="chips-row" style="min-height:30px;"></div>'
     '<div class="meta-row">'
     '<span class="meta-tag">' + dept + ' · ' + nom_departement + '</span>'

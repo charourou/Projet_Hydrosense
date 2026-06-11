@@ -451,37 +451,35 @@ def pred_future(model, df_ml: pd.DataFrame, n_weeks: int = 13) -> pd.Series:
        'PC2_lag_1', 'PC3_lag_1', 'PU_synth_lag_1', 'PU_synth_lag_2',
        'PU_synth_lag_3', 'PU_synth_lag_4']
 
-    df_future = df_ml.copy()
+    df_future = df_ml[TRAINING_FEATURES].copy()
     predictions = []
 
-    TRAINING_FEATURES = ['semaine_sin', 'semaine_cos', 'niveau_nappe_eau_lag_1',
-       'niveau_nappe_eau_lag_2', 'niveau_nappe_eau_lag_3',
-       'niveau_nappe_eau_lag_4', 'niveau_nappe_eau_lag_52', 'PC1_lag_1',
-       'PC2_lag_1', 'PC3_lag_1', 'PU_synth_lag_1', 'PU_synth_lag_2',
-       'PU_synth_lag_3', 'PU_synth_lag_4']
-
     for i in range(n_weeks):
-        last_row = df_future[TRAINING_FEATURES].tail(1).values
-        y_next = predict_model(model, last_row)[0]
+        last = df_future[TRAINING_FEATURES].iloc[-1]
+        y_next = predict_model(model, last.values.reshape(1, -1))[0]
         next_date = df_future.index[-1] + pd.Timedelta(weeks=1)
 
-        new_row = pd.DataFrame({
-            "niveau_nappe_eau": [y_next],
-            "semaine_sin":    [df_future["semaine_sin"]],
-            "semaine_cos":    [df_future["semaine_cos"]],
-            "niveau_nappe_eau_lag_1":      [y_next],
-            "niveau_nappe_eau_lag_2":      [df_future["niveau_nappe_eau"].iloc[-1]],
-            "niveau_nappe_eau_lag_3":      [df_future["niveau_nappe_eau"].iloc[-2]],
-            "niveau_nappe_eau_lag_4":      [df_future["niveau_nappe_eau"].iloc[-3]],
-            "niveau_nappe_eau_lag_52":     [df_future["niveau_nappe_eau"].iloc[-51]],
-            "PC1_lag_1": [df_future["PC1"].iloc[-1]],
-            "PC2_lag_1": [df_future["PC2"].iloc[-1]],
-            "PC3_lag_1": [df_future["PC3"].iloc[-1]],
-            "PU_synth_lag_1" :[df_future["PU_synth"].iloc[-1]],
-            "PU_synth_lag_2" :[df_future["PU_synth"].iloc[-2]],
-            "PU_synth_lag_3" :[df_future["PU_synth"].iloc[-3]],
-            "PU_synth_lag_4" :[df_future["PU_synth"].iloc[-4]],
+        week_num = next_date.isocalendar()[1]
 
+        # niveau_nappe_eau_lag_52 for date d+1 = level at (d+1 - 52w) = lag_1 at (d - 50w)
+        # After i appended rows, iloc[-51] always points to the correct historical position.
+        lag_52_value = float(df_future['niveau_nappe_eau_lag_1'].iloc[-51])
+
+        new_row = pd.DataFrame({
+            'semaine_sin':            [np.sin(2 * np.pi * week_num / 52)],
+            'semaine_cos':            [np.cos(2 * np.pi * week_num / 52)],
+            'niveau_nappe_eau_lag_1': [float(y_next)],
+            'niveau_nappe_eau_lag_2': [float(last['niveau_nappe_eau_lag_1'])],
+            'niveau_nappe_eau_lag_3': [float(last['niveau_nappe_eau_lag_2'])],
+            'niveau_nappe_eau_lag_4': [float(last['niveau_nappe_eau_lag_3'])],
+            'niveau_nappe_eau_lag_52': [lag_52_value],
+            'PC1_lag_1':              [float(last['PC1_lag_1'])],
+            'PC2_lag_1':              [float(last['PC2_lag_1'])],
+            'PC3_lag_1':              [float(last['PC3_lag_1'])],
+            'PU_synth_lag_1':         [0.0],
+            'PU_synth_lag_2':         [float(last['PU_synth_lag_1'])],
+            'PU_synth_lag_3':         [float(last['PU_synth_lag_2'])],
+            'PU_synth_lag_4':         [float(last['PU_synth_lag_3'])],
         }, index=[next_date])
 
         df_future = pd.concat([df_future, new_row])
