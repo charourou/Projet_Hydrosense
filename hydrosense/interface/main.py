@@ -379,37 +379,38 @@ if __name__ == "__main__":
     forecast = pred(model, df_ml)
 
 
-# probleme de dataleakage ???
 def pred_future(model, df_ml: pd.DataFrame, n_weeks: int = 13) -> pd.Series:
     """
     Génère les prévisions sur les n_weeks prochaines semaines (futur réel).
-    Utilise une boucle autorégressive — chaque semaine prédit la suivante.
+    Boucle autorégressive : à chaque itération on construit les features de la
+    semaine À PRÉDIRE (convention identique à preprocess_week : lag_1 = semaine
+    précédente, moyenne_3w = moyenne des 3 semaines précédentes, etc.), puis on
+    réinjecte la prédiction dans l'historique pour prédire la semaine suivante.
     """
     print(Fore.MAGENTA + "\n⭐️ Use case: pred_future" + Style.RESET_ALL)
 
     FEATURE_COLS = ["semaine", "lag_1", "lag_2", "lag_3", "lag_4", "lag_52", "moyenne_3w", "moyenne_6w"]
-    df_future = df_ml.copy()
+    niveaux = df_ml["niveau_nappe_eau"].copy()
     predictions = []
 
     for i in range(n_weeks):
-        last_row = df_future[FEATURE_COLS].tail(1).values
-        y_next = predict_model(model, last_row)[0]
-        next_date = df_future.index[-1] + pd.Timedelta(weeks=1)
+        next_date = niveaux.index[-1] + pd.Timedelta(weeks=1)
 
-        new_row = pd.DataFrame({
-            "niveau_nappe_eau": [y_next],
+        # niveaux.iloc[-k] = niveau k semaines avant next_date
+        features = pd.DataFrame({
             "semaine":    [next_date.isocalendar().week],
-            "lag_1":      [y_next],
-            "lag_2":      [df_future["niveau_nappe_eau"].iloc[-1]],
-            "lag_3":      [df_future["niveau_nappe_eau"].iloc[-2]],
-            "lag_4":      [df_future["niveau_nappe_eau"].iloc[-3]],
-            "lag_52":     [df_future["niveau_nappe_eau"].iloc[-51]],
-            "moyenne_3w": [df_future["niveau_nappe_eau"].tail(3).mean()],
-            "moyenne_6w": [df_future["niveau_nappe_eau"].tail(6).mean()],
+            "lag_1":      [niveaux.iloc[-1]],
+            "lag_2":      [niveaux.iloc[-2]],
+            "lag_3":      [niveaux.iloc[-3]],
+            "lag_4":      [niveaux.iloc[-4]],
+            "lag_52":     [niveaux.iloc[-52]],
+            "moyenne_3w": [niveaux.tail(3).mean()],
+            "moyenne_6w": [niveaux.tail(6).mean()],
         }, index=[next_date])
 
-        df_future = pd.concat([df_future, new_row])
-        predictions.append((next_date, round(float(y_next), 3)))
+        y_next = float(predict_model(model, features[FEATURE_COLS].values)[0])
+        niveaux.loc[next_date] = y_next
+        predictions.append((next_date, round(y_next, 3)))
 
     forecast = pd.Series(
         [p[1] for p in predictions],
