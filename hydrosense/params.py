@@ -13,21 +13,20 @@ BUCKET_NAME = os.environ.get("BUCKET_NAME")
 INSTANCE = os.environ.get("INSTANCE")
 
 
-TARGET_COL = "niveau_nappe_eau"
-DATE_COL = "date_mesure"
+
 
 MLFLOW_TRACKING_URI = ''
 MLFLOW_EXPERIMENT = ''
 MLFLOW_MODEL_NAME = ''
 PREFECT_FLOW_NAME = ''
 PREFECT_LOG_LEVEL = ''
-EVALUATION_START_DATE = '2026-03-01'
 
-TARGET_COL   = "niveau_nappe_eau"
 
 ##################  CONSTANTS  #####################
 
-
+TARGET_COL = "niveau_nappe_eau"
+DATE_COL = "date_mesure"
+EVALUATION_START_DATE = '2026-03-01'
 
 ################  LISTE OF PIEZOS TARGETS ################
 TARGETS_BSS = [

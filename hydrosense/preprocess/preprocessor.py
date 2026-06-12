@@ -189,7 +189,10 @@ def scale_feats(X_train_df: pd.DataFrame, X_test_df: pd.DataFrame) -> Tuple:
     feat_to_scale = ['niveau_nappe_eau', 'TM_synth', 'PC1','PC2', 'PC3', 'PU_synth']
     feat_to_minmax = ['RR_synth','FFM_synth']
 
-    # cols_std = [c for c in feat_to_scale if c in X_train_df.columns]
+    # TODO MAYBE the scaler should be done manually
+    # Fit on the main feat
+    # transform on the lagged products
+
     cols_std = []
     for col in X_train_df.columns:
         is_lagged_feature = any(col.startswith(f"{f}_lag_") for f in feat_to_scale)
@@ -201,6 +204,7 @@ def scale_feats(X_train_df: pd.DataFrame, X_test_df: pd.DataFrame) -> Tuple:
 
     scaler = StandardScaler()
     scaler.set_output(transform="pandas")
+    
     minmaxer = MinMaxScaler()
     minmaxer.set_output(transform="pandas")
 
