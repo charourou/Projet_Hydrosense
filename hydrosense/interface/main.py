@@ -12,7 +12,6 @@ from hydrosense.ml_logic.model import initialize_model, optimize_model, train_mo
 from hydrosense.ml_logic.folding import get_folds
 from hydrosense.ml_logic.base import BaselineLastYear
 
-
 from hydrosense.database.bigquery import load_piezo_bq, load_plean
 from hydrosense.preprocess.cleaning import clean_piezo, clean_piezo2
 from hydrosense.preprocess.preprocessor import preprocess_week, split_data
@@ -29,11 +28,7 @@ MODEL_TYPE = 'LASSO'  # ['LASSO', 'BASE', 'XGB']
 DATA_PATH    = Path("data/piezo_bourdet_clean.csv")
 DATA_CODE_PIEZO = "BSS001QHYH"
 DATE_COL     = "date_mesure"
-#FEATURE_COLS = ["mois", "lag_1", "lag_2", "lag_3", "lag_12", "moyenne_3m", "moyenne_6m"]
-#FEATURE_COLS = ["semaine", "lag_1", "lag_2", "lag_3", "lag_12", "moyenne_3m", "moyenne_6m"]
-#FEATURE_COLS = ["semaine", "lag_1", "lag_2", "lag_3","lag_4" ,"lag_52", "moyenne_3w", "moyenne_6w","RR_lag_1","RR_lag_2","RR_moy_4w"]
-#FEATURE_COLS = ["semaine_sin","semaine_cos", "lag_1", "lag_2", "lag_3","lag_4" ,"lag_52", "moyenne_3w", "moyenne_6w","RR_synth"]
-#FEATURE_COLS = ["semaine_sin","semaine_cos", "lag_1","lag_4" ,"lag_52", "moyenne_3w", "moyenne_6w","RR_lag_1","RR_lag_2","RR_moy_4w"]
+
 FEATURE_COLS = [
     # Saisonnalité cyclique pure
     "semaine_sin", "semaine_cos",
@@ -425,6 +420,7 @@ def pred_future(model, df_ml: pd.DataFrame, n_weeks: int = 13) -> pd.Series:
         y_next = predict_model(model, last_row)[0]
         next_date = df_future.index[-1] + pd.Timedelta(weeks=1)
 
+        # ATTENTION RIGIDE
         new_row = pd.DataFrame({
             "niveau_nappe_eau": [y_next],
             "semaine_sin":    [df_future["semaine_sin"]],
@@ -437,11 +433,10 @@ def pred_future(model, df_ml: pd.DataFrame, n_weeks: int = 13) -> pd.Series:
             "PC1_lag_1": [df_future["PC1"].iloc[-1]],
             "PC2_lag_1": [df_future["PC2"].iloc[-1]],
             "PC3_lag_1": [df_future["PC3"].iloc[-1]],
-            "PU_synth_lag_1" :[df_future["PU_synth"].iloc[-1]],
+            "PU_synth_lag_1" :[df_future["PU_synth"].iloc[-1]],  # FAUX
             "PU_synth_lag_2" :[df_future["PU_synth"].iloc[-2]],
             "PU_synth_lag_3" :[df_future["PU_synth"].iloc[-3]],
             "PU_synth_lag_4" :[df_future["PU_synth"].iloc[-4]],
-
         }, index=[next_date])
 
         df_future = pd.concat([df_future, new_row])
