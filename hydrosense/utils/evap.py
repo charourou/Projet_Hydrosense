@@ -49,7 +49,8 @@ def estim_PU(P_mm, T_moy_C, vent_m_s, lat_deg, altitude_m, jour_annee, humidite_
 
 def lag_pluie(df: pd.DataFrame, col_pluie: str = 'PU_synth', col_nappe: str = 'niveau_nappe_eau',
                            max_lag: int = 120,
-                           toggle_plot: bool = False
+                           toggle_plot: bool = False,
+                           ax = None
                            ) -> int:
     """
     Calcule la corrélation croisée entre un signal météo et un niveau de nappe
@@ -80,23 +81,39 @@ def lag_pluie(df: pd.DataFrame, col_pluie: str = 'PU_synth', col_nappe: str = 'n
     best_corr = corr_values[best_idx]
 
     if toggle_plot:
-    # 4. Visualisation
-        plt.figure(figsize=(10, 5))
-        plt.plot(lags, corr_values, marker='o', color='teal', markersize=4, label='Corrélation de Pearson')
-        plt.plot(best_lag, best_corr, marker='*', color='red', markersize=12, label=f'Max: {best_lag} jours')
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(10, 5))
+            is_standalone = True
 
-        plt.axhline(0, color='black', linestyle='--', linewidth=1)
-        plt.title(f"Temps de réponse de la nappe : {col_pluie} vs {col_nappe}")
-        plt.xlabel("Décalage (Jours)")
-        plt.ylabel("Coefficient de Corrélation")
-        plt.legend()
-        plt.grid(True, alpha=0.3)
-        plt.tight_layout()
-        plt.show()
+        else:
+            is_standalone = False
+
+        ax.plot(lags, corr_values, marker='o', color='teal', markersize=4,
+                label='Corrélation de Pearson')
+        ax.plot(best_lag, best_corr, marker='*', color='red', markersize=12,
+                label=f'Max: {best_lag} jours')
+
+        ax.axhline(0, color='black', linestyle='--', linewidth=1)
+        
+        ax.set_title(f"Temps de réponse de la nappe : {col_pluie} vs {col_nappe}")
+        ax.set_xlabel("Décalage (Jours)", fontsize=12)
+        ax.set_ylabel("Coefficient de Corrélation", fontsize=12)
+        ax.legend(loc = 'upper right', frameon= True)
+        ax.grid(True, alpha=0.5, linestyle=':' )
+
+        # Nettoyage des bordures
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['left'].set_color('#cbd5e1')
+        ax.spines['bottom'].set_color('#cbd5e1')
+
+        if is_standalone:
+            plt.tight_layout()
+            plt.show()
 
     print(f"✅ Le temps de réponse optimal estimé de la nappe est de {best_lag} jours (Corrélation: {best_corr:.3f}).")
 
-    return best_lag, best_corr
+    return best_lag, best_corr, ax
 
 # --- Exemple d'utilisation ---
 # temps_reponse = calculer_temps_reponse(df, col_pluie='PU_synth', col_nappe='niveau_nappe_eau', max_lag=90)
