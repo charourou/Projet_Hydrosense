@@ -1,4 +1,5 @@
 import json
+from functools import lru_cache
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
@@ -245,13 +246,16 @@ def pluie(bss_id: str, days: int = 30):
 # PRÉVISION
 # ══════════════════════════════════════════════════════════════════════════════
 
-@app.get("/predict")
-def predict(bss_id: str):
-    """Prévision XGBoost autorégressive sur 13 semaines."""
-    try:
-        df_raw = load_plean(bss_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+@lru_cache(maxsize=128)
+def _forecast_cached(bss_id: str) -> tuple:
+    """Charge, entraîne et prédit pour un piézomètre — mis en cache par bss_id.
+
+    L'entraînement étant déterministe (random_state=42), recalculer donnerait
+    le même résultat tant que les données BigQuery n'ont pas changé ; le cache
+    vit le temps de l'instance Cloud Run. Lève ValueError si bss_id inconnu
+    (les exceptions ne sont pas mises en cache par lru_cache).
+    """
+    df_raw = load_plean(bss_id)
     df_w = preprocess_week(df_raw)
 
     FEATURE_COLS = ["semaine", "lag_1", "lag_2", "lag_3", "lag_4", "lag_52", "moyenne_3w", "moyenne_6w"]
@@ -260,11 +264,24 @@ def predict(bss_id: str):
     model, _ = train(X_train, y_train, optimize=False)
 
     forecast = pred_future(model, df_w, n_weeks=13)
+    return tuple(
+        (date.strftime("%Y-%m-%d"), round(float(val), 3))
+        for date, val in forecast.items()
+    )
+
+
+@app.get("/predict")
+def predict(bss_id: str):
+    """Prévision XGBoost autorégressive sur 13 semaines."""
+    try:
+        prevision = _forecast_cached(bss_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
     return {
         "bss_id": bss_id,
         "prévision": [
-            {"date": date.strftime("%Y-%m-%d"), "niveau": round(float(val), 3)}
-            for date, val in forecast.items()
+            {"date": date, "niveau": niveau}
+            for date, niveau in prevision
         ],
     }
