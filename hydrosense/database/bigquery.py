@@ -12,15 +12,18 @@ def load_piezo_bq(bss_id: str):
     query = f"""
         SELECT date_mesure, niveau_nappe_eau
         FROM `{table_ref}`
-        WHERE bss_id = '{bss_id}'
+        WHERE bss_id = @bss_id
         ORDER BY date_mesure
     """
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[bigquery.ScalarQueryParameter("bss_id", "STRING", bss_id)]
+    )
 
     client = bigquery.Client(project=GCP_PROJECT_ID)
     # Catch and ignore the specific BigQuery Storage API fallback warning
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", module="google.cloud.bigquery")
-        df = client.query(query).to_dataframe()
+        df = client.query(query, job_config=job_config).to_dataframe()
 
     if df.empty:
         raise ValueError(f"Aucune donnée trouvée pour {bss_id}")
@@ -73,15 +76,18 @@ def load_plean(bss_id: str) -> pd.DataFrame:
     query = f"""
         SELECT *
         FROM `{table_ref}`
-        WHERE bss_id = '{bss_id}'
+        WHERE bss_id = @bss_id
         ORDER BY date_mesure
     """
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[bigquery.ScalarQueryParameter("bss_id", "STRING", bss_id)]
+    )
 
     client = bigquery.Client(project=GCP_PROJECT_ID)
 
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", module="google.cloud.bigquery")
-        df = client.query(query).to_dataframe()
+        df = client.query(query, job_config=job_config).to_dataframe()
 
     if df.empty:
         raise ValueError(f"❌ Aucune donnée ML trouvée pour {bss_id} dans la table {table_id}")
@@ -111,11 +117,14 @@ def info_piezo(bss_id: str, raw = False):
     query = f"""
         SELECT *
         FROM `{table_ref}`
-        WHERE bss_id = '{bss_id}'
+        WHERE bss_id = @bss_id
         """
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[bigquery.ScalarQueryParameter("bss_id", "STRING", bss_id)]
+    )
 
     client = bigquery.Client(project=GCP_PROJECT_ID)
-    info = client.query(query)
+    info = client.query(query, job_config=job_config)
 
     return info.to_dataframe()
 
