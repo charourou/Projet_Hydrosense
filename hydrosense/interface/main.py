@@ -140,10 +140,6 @@ def train(X_train_df: pd.DataFrame, y_train_df: pd.Series,
           pick_model = None,
           optimize = False):
     """
-    Optimise et entraîne le modèle XGBoost.
-
-    Parameters
-    ----------
     X_train, y_train : données d'entraînement
     optimize         : True → GridSearchCV | False → hyperparamètres par défaut
 

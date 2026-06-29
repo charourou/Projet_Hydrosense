@@ -10,11 +10,13 @@ class BaselineLastYear:
         self.history = None
 
     def fit(self, X_train, y_train):
+        """Constructs the baseline using x_train and y_train"""
+
         self.history = pd.Series(y_train.values, index=X_train.index)
         return self
 
     def predict(self, X_test):
-        """ retourne un y_pred de même longueur que X_test
+        """ retourne un y_pred de même longueur que X_test. Seulement utiliser l'index
         En allant chercher la valeur y_train à la date -1 an
         """
         if self.history is None:
