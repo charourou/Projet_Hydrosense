@@ -321,7 +321,7 @@ def pred(model, df_ml: pd.DataFrame) -> pd.Series:
     return forecast
 
 
-def pred_future(model, df_ml: pd.DataFrame, scaler, n_weeks: int = 13) -> pd.Series:
+def pred_future(model, df_ml: pd.DataFrame, scaler, n_weeks: int = 13, scenario = 'sec') -> pd.Series:
     """
     Génère les prévisions sur les n_weeks prochaines semaines (futur réel).
     Utilise une boucle autorégressive — chaque semaine prédit la suivante.
@@ -331,15 +331,6 @@ def pred_future(model, df_ml: pd.DataFrame, scaler, n_weeks: int = 13) -> pd.Ser
     df_future = df_ml.copy()
     predictions = []
 
-    # Extraire la moyenne et l'écart-type dans le scaler
-    index_col = list(scaler.feature_names_in_).index("niveau_nappe_eau_lag_1")
-    moyenne_col, ecart_type_col = scaler.mean_[index_col], scaler.scale_[index_col]
-
-    # Scenario de pluie.
-    # SECHERESSE = np.min(df_future["PU_synth_lag_1"])
-    SECHERESSE = -1
-
-
     # TODO : check hard ou soft list <<<<<<<< ??
     # VERSION LITE - sans ['PC1_lag_1',  'PC2_lag_1', 'PC3_lag_1' ]
     TRAINING_FEATURES =  ['semaine_sin', 'semaine_cos',
@@ -348,6 +339,20 @@ def pred_future(model, df_ml: pd.DataFrame, scaler, n_weeks: int = 13) -> pd.Ser
                             'niveau_nappe_eau_lag_52',
                             'PU_synth_lag_1', 'PU_synth_lag_2', 'PU_synth_lag_3', 'PU_synth_lag_4'
                             ]
+
+    # Extraire la moyenne et l'écart-type dans le scaler
+    index_col = list(scaler.feature_names_in_).index("niveau_nappe_eau_lag_1")
+    moyenne_col, ecart_type_col = scaler.mean_[index_col], scaler.scale_[index_col]
+
+    # Scenario de pluie.
+    #
+    if scenario == 'sec':
+        static_PU = -1
+    elif scenario == 'neutre':
+        static_PU = 0
+    # elif   => moyenne annuelle
+
+
 
 
     for i in range(n_weeks):
@@ -372,7 +377,7 @@ def pred_future(model, df_ml: pd.DataFrame, scaler, n_weeks: int = 13) -> pd.Ser
             "niveau_nappe_eau_lag_4":      [df_future["niveau_nappe_eau_lag_3"].iloc[-1]],
             "niveau_nappe_eau_lag_52":     [df_future["niveau_nappe_eau_lag_1"].iloc[-51]],
 
-            "PU_synth_lag_1" :[SECHERESSE],  # Hypothese SECHERESSE -----
+            "PU_synth_lag_1" :[static_PU],
             "PU_synth_lag_2" :[df_future["PU_synth_lag_1"].iloc[-1]],
             "PU_synth_lag_3" :[df_future["PU_synth_lag_2"].iloc[-1]],
             "PU_synth_lag_4" :[df_future["PU_synth_lag_3"].iloc[-1]],
