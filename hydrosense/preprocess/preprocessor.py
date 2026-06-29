@@ -1,15 +1,15 @@
 import numpy as np
 import pandas as pd
-from hydrosense import params
+from typing import Tuple
+from colorama import Fore, Style
 
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.pipeline import Pipeline, make_pipeline
 from sklearn.impute import SimpleImputer
 
-from colorama import Fore, Style
-
 from hydrosense.database.bigquery import load_plean
-from typing import Tuple
+from hydrosense import params
+
 
 
 def preprocess_week(df: pd.DataFrame) -> pd.DataFrame:
@@ -169,9 +169,7 @@ def preprocess_week_w_PU_synth(df: pd.DataFrame) -> pd.DataFrame:
     print(f"✅ preprocess() done — {len(df_w)} semaines | {df_w.shape[1]} colonnes\n")
 
     return df_w
-import pandas as pd
-from sklearn.preprocessing import StandardScaler
-from typing import Tuple
+
 
 def scale_feats(X_train_df: pd.DataFrame, X_test_df: pd.DataFrame) -> Tuple:
     """
@@ -189,7 +187,10 @@ def scale_feats(X_train_df: pd.DataFrame, X_test_df: pd.DataFrame) -> Tuple:
     feat_to_scale = ['niveau_nappe_eau', 'TM_synth', 'PC1','PC2', 'PC3', 'PU_synth']
     feat_to_minmax = ['RR_synth','FFM_synth']
 
-    # cols_std = [c for c in feat_to_scale if c in X_train_df.columns]
+    # TODO MAYBE the scaler should be done manually
+    # Fit on the main feat
+    # transform on the lagged products
+
     cols_std = []
     for col in X_train_df.columns:
         is_lagged_feature = any(col.startswith(f"{f}_lag_") for f in feat_to_scale)
@@ -201,11 +202,12 @@ def scale_feats(X_train_df: pd.DataFrame, X_test_df: pd.DataFrame) -> Tuple:
 
     scaler = StandardScaler()
     scaler.set_output(transform="pandas")
+
     minmaxer = MinMaxScaler()
     minmaxer.set_output(transform="pandas")
 
 
-    # 3. Fit & Transform sur le Train, Transform sur le Test
+    # Fit & Transform sur le Train, Transform sur le Test
     X_train_out = X_train_df.copy()
     X_test_out = X_test_df.copy()
 
@@ -276,9 +278,9 @@ def make_preproc_week(df: pd.DataFrame,
     Retourne X_train, X_test, y_train, y_test scalés.
     """
 
+    # Gestion des valeurs manquantes pour PCs
     si = SimpleImputer(strategy='constant', fill_value = 0)
     si.set_output(transform="pandas")
-
     cols_pc = list(filter(lambda x: x.startswith('PC'), df.columns))
     df[cols_pc] = si.fit_transform(df[cols_pc])
 
@@ -286,7 +288,7 @@ def make_preproc_week(df: pd.DataFrame,
     df_w = preprocess_week(df)
     df_full = prepare_lags(df_w)
 
-    # 2. Split temporel (on utilise la date pour découper proprement)
+    # Split temporel (on utilise la date pour découper proprement)
     # il va falloir utiliser ce pipeline pour la production ou faire un
 
     X_train, X_test = split_lagged_data(
@@ -298,15 +300,15 @@ def make_preproc_week(df: pd.DataFrame,
 
     assert X_train.shape[0] > 0
 
-    X_train_scaled, X_test_scaled, scaler, _ = scale_feats( X_train_df=X_train,
-                                                       X_test_df=X_test
-                                                        )
+    X_train_scaled, X_test_scaled, stdscaler, _ = scale_feats(  X_train_df  =X_train,
+                                                                X_test_df   =X_test
+                                                                )
     y_train = y_train.loc[X_train_scaled.index]
 
     # Vérification critique
     assert X_train_scaled.shape[0] == y_train.shape[0], "Mismatch entre X_train et y_train !"
-
-    return X_train_scaled, X_test_scaled, y_train, y_test, scaler
+    
+    return X_train_scaled, X_test_scaled, y_train, y_test, stdscaler
 
 
 
@@ -315,9 +317,9 @@ if __name__ == "__main__":
     # Définition des constantes pour le test
     DATA_CODE_PIEZO = "BSS001QHYH"
     FEATURE_COLS = ["semaine_sin", "semaine_cos", "PU_synth", "PC1", "PC2", "PC3"]
-    TRAIN_END = "2025-02-28"
+    TRAIN_END  = "2025-02-28"
     TEST_START = "2025-03-01"
-    TEST_END = "2025-05-31"
+    TEST_END   = "2025-05-31"
 
     # Pipeline exemple
     df = load_plean(DATA_CODE_PIEZO)
@@ -331,7 +333,7 @@ if __name__ == "__main__":
     X_train, X_test = split_lagged_data(
         X_lagged, FEATURE_COLS, params.TARGET_COL, TRAIN_END, TEST_START, TEST_END
     )
-    # On a perdu le y )
+    # On a perdu le y -- on le recree derrière
     _, _, y_train, y_test = split_data(
         df_w, FEATURE_COLS, params.TARGET_COL, TRAIN_END, TEST_START, TEST_END
     )

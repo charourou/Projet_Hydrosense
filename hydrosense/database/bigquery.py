@@ -5,8 +5,10 @@ from hydrosense.params import *
 
 TABLE_ID   = "chroniques_piezo"
 
-def load_piezo_bq(bss_id: str):
+print("Verification de la location du fichier présent BigQuery: " , __file__)
 
+def load_piezo_bq(bss_id: str):
+    """Charge les données brutes depuis la table 'chroniques_piezo' de BigQuery pour un piézomètre donné."""
     table_ref = f"{GCP_PROJECT_ID}.{BQ_DATASET_ID}.{TABLE_ID}"
 
     query = f"""
@@ -62,6 +64,8 @@ def load_pem_bq(bss_id: str):
     return df
 
 
+
+
 def load_plean(bss_id: str) -> pd.DataFrame:
     """
     Charge les données préparées pour le Machine Learning (Météo, PU, PCA)
@@ -96,13 +100,9 @@ def load_plean(bss_id: str) -> pd.DataFrame:
     return df
 
 
-
-
 def info_piezo(bss_id: str, raw = False):
     """
-    Loads the information concerning the bss_id
-    either from the cat_piezo_raw or the cat_piezo_interm table.
-
+    Télécharge les informations synthétiques présentes sur le catalogue intermediaire
     """
     CAT_ID = 'cat_piezo_raw' if raw else 'cat_piezo_interm'
 
