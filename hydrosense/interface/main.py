@@ -296,25 +296,95 @@ def evaluate_deeper(X_df: pd.DataFrame, y_df: pd.Series, splits,
 
 def pred(model, df_ml: pd.DataFrame) -> pd.Series:
     """
-    Génère les prévisions sur toute la période de test (Mars → Mai 2026),
+    Génère les prévisions sur toute la période de test ( Printemps ),
     soit environ 12 à 13 semaines selon le calendrier.
     """
     print(Fore.MAGENTA + "\n⭐️ Use case: pred" + Style.RESET_ALL)
 
-    # 1. On filtre df_ml pour ne garder QUE la période cible (Mars à Mai 2026)
-    # C'est exactement les mêmes dates que ton X_test
+    # On filtre df_ml pour ne garder QUE la période cible (Printemps)
     df_futur = df_ml.loc[params.EVALUATION_START_DATE:TEST_END]
 
-    # 2. On extrait les features matricielles (X) pour cette période
+    # On extrait les features
     X_future = df_futur[FEATURE_COLS].values
 
-    # 3. XGBoost génère autant de prédictions qu'il y a de lignes (12 ou 13)
+    # Le modèle génère autant de prédictions qu'il y a de lignes
+    # WARNING : ceci est une prevision LIEE
+    # DATA LEAKAGE
     y_pred = predict_model(model, X_future)
 
-    # 4. On crée la Series Pandas en utilisant directement l'index temporel réel de cette période
-    forecast = pd.Series(y_pred, index=df_futur.index, name=params.TARGET_COL)
+    # On crée la Series Pandas en utilisant directement l'index temporel réel de cette période
+    forecast = pd.Series(y_pred,
+                         index=df_futur.index,
+                         name=params.TARGET_COL)
 
     print(f"\n✅ pred() done — Predicted {len(forecast)} weeks:\n{forecast.to_string()}\n")
+    return forecast
+
+
+def pred_future(model, df_ml: pd.DataFrame, n_weeks: int = 13) -> pd.Series:
+    """
+    Génère les prévisions sur les n_weeks prochaines semaines (futur réel).
+    Utilise une boucle autorégressive — chaque semaine prédit la suivante.
+    """
+    print(Fore.MAGENTA + "\n⭐️ Use case: pred_future" + Style.RESET_ALL)
+
+    df_future = df_ml.copy()
+    predictions = []
+
+    # Scenario de pluie.
+    SECHERESSE = np.min(df_future["PU_synth_lag_1"])
+    SECHERESSE = -1
+
+
+    # TODO : check hard ou soft list <<<<<<<< ??
+    # VERSION LITE - sans ['PC1_lag_1',  'PC2_lag_1', 'PC3_lag_1' ]
+    TRAINING_FEATURES =  ['semaine_sin', 'semaine_cos',
+                            'niveau_nappe_eau_lag_1', 'niveau_nappe_eau_lag_2', 'niveau_nappe_eau_lag_3',
+                            'niveau_nappe_eau_lag_4',
+                            'niveau_nappe_eau_lag_52',
+                            'PU_synth_lag_1', 'PU_synth_lag_2', 'PU_synth_lag_3', 'PU_synth_lag_4'
+                            ]
+
+
+
+    for i in range(n_weeks):
+
+        # prevision à date t (lag 0)
+        last_row = df_future[TRAINING_FEATURES].tail(1).values
+        y_next = predict_model(model, last_row)[0]
+
+
+
+        next_date = df_future.index[-1] + pd.Timedelta(weeks=1)
+        semaine = next_date.isocalendar().week
+
+        # ATTENTION RIGIDE
+        # creer un fonction pour mettre en place la nouvelle ligne
+        new_row = pd.DataFrame({
+            "semaine_sin":    [np.sin(2 * np.pi * semaine / 52)]   ,
+            "semaine_cos":    [np.cos(2 * np.pi * semaine / 52)]   ,
+            "niveau_nappe_eau_lag_1":      [y_next],
+            "niveau_nappe_eau_lag_2":      [df_future["niveau_nappe_eau_lag_1"].iloc[-1]],
+            "niveau_nappe_eau_lag_3":      [df_future["niveau_nappe_eau_lag_2"].iloc[-1]],
+            "niveau_nappe_eau_lag_4":      [df_future["niveau_nappe_eau_lag_3"].iloc[-1]],
+            "niveau_nappe_eau_lag_52":     [df_future["niveau_nappe_eau_lag_1"].iloc[-50]],
+
+            "PU_synth_lag_1" :[SECHERESSE],  # Hypothese SECHERESSE -----
+            "PU_synth_lag_2" :[df_future["PU_synth_lag_1"].iloc[-1]],
+            "PU_synth_lag_3" :[df_future["PU_synth_lag_2"].iloc[-1]],
+            "PU_synth_lag_4" :[df_future["PU_synth_lag_3"].iloc[-1]],
+        }, index=[next_date])
+
+        df_future = pd.concat([df_future, new_row])
+        predictions.append((next_date, round(float(y_next), 3)))
+
+    forecast = pd.Series(
+        [p[1] for p in predictions],
+        index=[p[0] for p in predictions],
+        name=params.TARGET_COL
+    )
+
+    print(f"\n✅ pred_future() done — {len(forecast)} semaines prédites\n")
     return forecast
 
 
@@ -387,62 +457,3 @@ if __name__ == "__main__":
 
     # 4. Predict — prévision 3 mois futurs
     forecast = pred(model, df_ml)
-
-
-def pred_future(model, df_ml: pd.DataFrame, n_weeks: int = 13) -> pd.Series:
-    """
-    Génère les prévisions sur les n_weeks prochaines semaines (futur réel).
-    Utilise une boucle autorégressive — chaque semaine prédit la suivante.
-    """
-    print(Fore.MAGENTA + "\n⭐️ Use case: pred_future" + Style.RESET_ALL)
-
-    TRAINING_FEATURES = ['semaine_sin', 'semaine_cos', 'niveau_nappe_eau_lag_1',
-       'niveau_nappe_eau_lag_2', 'niveau_nappe_eau_lag_3',
-       'niveau_nappe_eau_lag_4', 'niveau_nappe_eau_lag_52', 'PC1_lag_1',
-       'PC2_lag_1', 'PC3_lag_1', 'PU_synth_lag_1', 'PU_synth_lag_2',
-       'PU_synth_lag_3', 'PU_synth_lag_4']
-
-    df_future = df_ml.copy()
-    predictions = []
-
-    TRAINING_FEATURES = ['semaine_sin', 'semaine_cos', 'niveau_nappe_eau_lag_1',
-       'niveau_nappe_eau_lag_2', 'niveau_nappe_eau_lag_3',
-       'niveau_nappe_eau_lag_4', 'niveau_nappe_eau_lag_52', 'PC1_lag_1',
-       'PC2_lag_1', 'PC3_lag_1', 'PU_synth_lag_1', 'PU_synth_lag_2',
-       'PU_synth_lag_3', 'PU_synth_lag_4']
-
-    for i in range(n_weeks):
-        last_row = df_future[TRAINING_FEATURES].tail(1).values
-        y_next = predict_model(model, last_row)[0]
-        next_date = df_future.index[-1] + pd.Timedelta(weeks=1)
-
-        # ATTENTION RIGIDE
-        new_row = pd.DataFrame({
-            "niveau_nappe_eau": [y_next],
-            "semaine_sin":    [df_future["semaine_sin"]],
-            "semaine_cos":    [df_future["semaine_cos"]],
-            "niveau_nappe_eau_lag_1":      [y_next],
-            "niveau_nappe_eau_lag_2":      [df_future["niveau_nappe_eau"].iloc[-1]],
-            "niveau_nappe_eau_lag_3":      [df_future["niveau_nappe_eau"].iloc[-2]],
-            "niveau_nappe_eau_lag_4":      [df_future["niveau_nappe_eau"].iloc[-3]],
-            "niveau_nappe_eau_lag_52":     [df_future["niveau_nappe_eau"].iloc[-51]],
-            "PC1_lag_1": [df_future["PC1"].iloc[-1]],
-            "PC2_lag_1": [df_future["PC2"].iloc[-1]],
-            "PC3_lag_1": [df_future["PC3"].iloc[-1]],
-            "PU_synth_lag_1" :[df_future["PU_synth"].iloc[-1]],  # FAUX
-            "PU_synth_lag_2" :[df_future["PU_synth"].iloc[-2]],
-            "PU_synth_lag_3" :[df_future["PU_synth"].iloc[-3]],
-            "PU_synth_lag_4" :[df_future["PU_synth"].iloc[-4]],
-        }, index=[next_date])
-
-        df_future = pd.concat([df_future, new_row])
-        predictions.append((next_date, round(float(y_next), 3)))
-
-    forecast = pd.Series(
-        [p[1] for p in predictions],
-        index=[p[0] for p in predictions],
-        name=params.TARGET_COL
-    )
-
-    print(f"\n✅ pred_future() done — {len(forecast)} semaines prédites\n")
-    return forecast
