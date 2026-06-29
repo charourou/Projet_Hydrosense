@@ -3,6 +3,7 @@ import pandas as pd
 import time
 from colorama import Fore, Style
 from typing import Tuple, Optional
+
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import GridSearchCV, TimeSeriesSplit
 from hydrosense.ml_logic.folding import get_folds
@@ -244,17 +245,12 @@ def evaluate_model(
 
     return metrics
 
-def predict_model(
-    model: XGBRegressor,
-    X: np.ndarray
-) -> np.ndarray:
-    """
-    Generate predictions for new input data.
-    """
+def predict_model(model, X) -> np.ndarray:
+    """    Generate predictions for new input data.    """
     if model is None:
         print(f"\n❌ No model to predict with")
         return None
 
     y_pred = model.predict(X)
-    print(f"✅ Predicted {len(y_pred)} values")
+    # print(f"✅ Predicted {len(y_pred)} values")
     return y_pred

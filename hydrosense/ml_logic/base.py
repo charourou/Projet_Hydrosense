@@ -38,4 +38,4 @@ class BaselineLastYear:
             except Exception:
                 y_pred.append(self.history.iloc[-1])
 
-        return np.array(y_pred)
+        return pd.Series(y_pred, index=X_test.index)
