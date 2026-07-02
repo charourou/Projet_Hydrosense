@@ -4,7 +4,11 @@
 
 Projet réalisé dans le cadre du bootcamp **Le Wagon Data Science & AI** — Nantes, batch #2275 (7 avril – 12 juin 2026).
 
-**🔗 Démo live :** [hydro-sense.streamlit.app](https://hydro-sense.streamlit.app) · **API :** [hydrosense-api](https://hydrosense-api-121714908762.europe-west1.run.app/docs)
+**🔗 Démo live :** [hydro-sense.streamlit.app](https://hydro-sense.streamlit.app) · **API :** [hydrosense-api](https://hydrosense-api-121714908762.europe-west1.run.app/docs)· **📊 Présentation :** [Demo_HydroSense.pdf](Demo_HydroSense.pdf)
+
+### 🎬 Diaporama
+
+![Présentation Hydro-Sense](screenshots/presentation.gif)
 
 ---
 
