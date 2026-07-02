@@ -303,8 +303,6 @@ def pred(model, df_ml: pd.DataFrame) -> pd.Series:
 
     # On filtre df_ml pour ne garder QUE la période cible (Printemps)
     df_futur = df_ml.loc[params.EVALUATION_START_DATE:TEST_END]
-
-    # On extrait les features
     X_future = df_futur[FEATURE_COLS].values
 
     # Le modèle génère autant de prédictions qu'il y a de lignes
@@ -313,8 +311,7 @@ def pred(model, df_ml: pd.DataFrame) -> pd.Series:
     y_pred = predict_model(model, X_future)
 
     # On crée la Series Pandas en utilisant directement l'index temporel réel de cette période
-    forecast = pd.Series(y_pred,
-                         index=df_futur.index,
+    forecast = pd.Series(y_pred, index=df_futur.index,
                          name=params.TARGET_COL)
 
     print(f"\n✅ pred() done — Predicted {len(forecast)} weeks:\n{forecast.to_string()}\n")
@@ -331,7 +328,7 @@ def pred_future(model, df_ml: pd.DataFrame, scaler, n_weeks: int = 13, scenario 
     df_future = df_ml.copy()
     predictions = []
 
-    # TODO : check hard ou soft list <<<<<<<< ??
+    # TODO : A ENLEVER
     # VERSION LITE - sans ['PC1_lag_1',  'PC2_lag_1', 'PC3_lag_1' ]
     TRAINING_FEATURES =  ['semaine_sin', 'semaine_cos',
                             'niveau_nappe_eau_lag_1', 'niveau_nappe_eau_lag_2', 'niveau_nappe_eau_lag_3',
@@ -340,20 +337,14 @@ def pred_future(model, df_ml: pd.DataFrame, scaler, n_weeks: int = 13, scenario 
                             'PU_synth_lag_1', 'PU_synth_lag_2', 'PU_synth_lag_3', 'PU_synth_lag_4'
                             ]
 
-    # Extraire la moyenne et l'écart-type dans le scaler
+
+    if scenario == 'saison':
+        # groupe par numéro de semaine (1 à 53)
+        moy_hebdo_pu = df_ml.groupby(df_ml.index.isocalendar().week)["PU_synth_lag_1"].mean()
+
+    # Extraire la moyenne et l'écart-type dans le scaler pour le niveau nappe
     index_col = list(scaler.feature_names_in_).index("niveau_nappe_eau_lag_1")
     moyenne_col, ecart_type_col = scaler.mean_[index_col], scaler.scale_[index_col]
-
-    # Scenario de pluie.
-    #
-    if scenario == 'sec':
-        static_PU = -1
-    elif scenario == 'neutre':
-        static_PU = 0
-    # elif   => moyenne annuelle
-
-
-
 
     for i in range(n_weeks):
 
@@ -362,12 +353,17 @@ def pred_future(model, df_ml: pd.DataFrame, scaler, n_weeks: int = 13, scenario 
         y_next = predict_model(model, last_row)[0]
         # il FAUDRA scaler
 
-
         next_date = df_future.index[-1] + pd.Timedelta(weeks=1)
         semaine = next_date.isocalendar().week
 
-        # ATTENTION RIGIDE
-        # creer un fonction pour mettre en place la nouvelle ligne
+        if scenario == 'sec':
+            current_pu = -1.0
+        elif scenario == 'neutre':
+            current_pu = 0.0
+        elif scenario == 'saison':
+            current_pu = moy_hebdo_pu.get(semaine, 0.0)
+
+
         new_row = pd.DataFrame({
             "semaine_sin":    [np.sin(2 * np.pi * semaine / 52)]   ,
             "semaine_cos":    [np.cos(2 * np.pi * semaine / 52)]   ,
@@ -377,7 +373,7 @@ def pred_future(model, df_ml: pd.DataFrame, scaler, n_weeks: int = 13, scenario 
             "niveau_nappe_eau_lag_4":      [df_future["niveau_nappe_eau_lag_3"].iloc[-1]],
             "niveau_nappe_eau_lag_52":     [df_future["niveau_nappe_eau_lag_1"].iloc[-51]],
 
-            "PU_synth_lag_1" :[static_PU],
+            "PU_synth_lag_1" :[current_pu],
             "PU_synth_lag_2" :[df_future["PU_synth_lag_1"].iloc[-1]],
             "PU_synth_lag_3" :[df_future["PU_synth_lag_2"].iloc[-1]],
             "PU_synth_lag_4" :[df_future["PU_synth_lag_3"].iloc[-1]],

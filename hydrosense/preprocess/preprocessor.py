@@ -214,9 +214,7 @@ def scale_feats(X_train_df: pd.DataFrame, X_test_df: pd.DataFrame) -> Tuple:
     try:
         X_train_out[cols_std] = scaler.fit_transform(X_train_df[cols_std])
     except:
-        print('error')
-        print(cols_std)
-        print(X_train_df)
+        print('error', cols_std, X_train_df)
         raise
 
     X_test_out[cols_std] = scaler.transform(X_test_df[cols_std])
@@ -300,14 +298,14 @@ def make_preproc_week(df: pd.DataFrame,
 
     assert X_train.shape[0] > 0
 
-    X_train_scaled, X_test_scaled, stdscaler, _ = scale_feats(  X_train_df  =X_train,
-                                                                X_test_df   =X_test
+    X_train_scaled, X_test_scaled, stdscaler, _ = scale_feats(  X_train_df  = X_train,
+                                                                X_test_df   = X_test
                                                                 )
     y_train = y_train.loc[X_train_scaled.index]
 
     # Vérification critique
     assert X_train_scaled.shape[0] == y_train.shape[0], "Mismatch entre X_train et y_train !"
-    
+
     return X_train_scaled, X_test_scaled, y_train, y_test, stdscaler
 
 
