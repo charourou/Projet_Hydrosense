@@ -6,13 +6,15 @@ from colorama import Fore, Style
 from typing import Tuple
 
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error, max_error
+from sklearn.linear_model import Lasso
 
 from hydrosense.ml_logic.model import initialize_model, optimize_model, train_model, evaluate_model, predict_model
 from hydrosense.ml_logic.folding import get_folds
+from hydrosense.ml_logic.base import BaselineLastYear
 
-from hydrosense.database.bigquery import load_piezo_bq
+from hydrosense.database.bigquery import load_piezo_bq, load_plean
 from hydrosense.preprocess.cleaning import clean_piezo, clean_piezo2
-from hydrosense.preprocess.preprocessor import preprocess_week
+from hydrosense.preprocess.preprocessor import preprocess_week, split_data
 
 
 from hydrosense import params
@@ -22,29 +24,36 @@ from hydrosense import params
 #  TODO : GERER PARAMS
 # ══════════════════════════════════════════════════════════════════════════════
 
-MODEL_TYPE = 'XGB'  # ['LINEAR','BAG'] ??
-
+MODEL_TYPE = 'LASSO'  # ['LASSO', 'BASE', 'XGB']
 DATA_PATH    = Path("data/piezo_bourdet_clean.csv")
 DATA_CODE_PIEZO = "BSS001QHYH"
-TARGET_COL   = "niveau_nappe_eau"
 DATE_COL     = "date_mesure"
-#FEATURE_COLS = ["mois", "lag_1", "lag_2", "lag_3", "lag_12", "moyenne_3m", "moyenne_6m"]
-#FEATURE_COLS = ["semaine", "lag_1", "lag_2", "lag_3", "lag_12", "moyenne_3m", "moyenne_6m"]
-#FEATURE_COLS = ["semaine", "lag_1", "lag_2", "lag_3","lag_4" ,"lag_52", "moyenne_3w", "moyenne_6w","RR_lag_1","RR_lag_2","RR_moy_4w"]
+
+FEATURE_COLS = [
+    # Saisonnalité cyclique pure
+    "semaine_sin", "semaine_cos",
+
+    # Historique de la nappe (Target)
+    "lag_1", "lag_2", "lag_3", "lag_4", "lag_52",
+
+    # Uniquement le lag 1 pour les PC
+    "PC1_lag_1",
+    "PC2_lag_1",
+    "PC3_lag_1",
+
+    # Lags 1 à 4 pour PU_synth
+    "PU_synth_lag_1", "PU_synth_lag_2", "PU_synth_lag_3", "PU_synth_lag_4"
+]
 FEATURE_COLS = ["semaine_sin","semaine_cos", "lag_1", "lag_2", "lag_3","lag_4" ,"lag_52", "moyenne_3w", "moyenne_6w","RR_synth"]
-#FEATURE_COLS = ["semaine_sin","semaine_cos", "lag_1","lag_4" ,"lag_52", "moyenne_3w", "moyenne_6w","RR_lag_1","RR_lag_2","RR_moy_4w"]
+FEATURE_COLS = ["semaine_sin","semaine_cos", "PU_synth", "PC1", "PC2", "PC3"]
 
-# A revoir
-# FEATURE_COLS = ["mois", "mois_sin", "mois_cos", "semaine",
-#                 "lag_1", "lag_2", "lag_3", "lag_12",
-#                 "moyenne_3m", "moyenne_6m"]
 
-# Split : 3 derniers mois en test (Mars → Mai 2026)
-# EN DUR --- OUILLE OUILLE
-
+# Split : 3 derniers mois en test (Mars → Mai 2025)
 TRAIN_END  = "2025-02-28"
 TEST_START = "2025-03-01"
 TEST_END   = "2025-05-31"
+
+
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -68,14 +77,13 @@ def load_data(path: Path = DATA_PATH) -> pd.DataFrame:
     print(f"✅ load_data() done — {len(df)} rows | {df.index.min().date()} → {df.index.max().date()}\n")
     return df
 
-
 # ══════════════════════════════════════════════════════════════════════════════
 # 2. PREPROCESSING
 # ══════════════════════════════════════════════════════════════════════════════
 
 def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     """
-    - Rééchantillonne les données journalières en moyennes mensuelles
+    - Rééchantillonne les données journalières en moyennes MENSUELLES
     - Construit les features de lag et moyennes mobiles pour XGBoost
     - Supprime les lignes avec NaN (dues aux shifts)
 
@@ -94,14 +102,10 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     # Feature engineering
     df_ml = pd.DataFrame(y_mensuel)
 
-
     df_ml["lag_1"]      = df_ml[params.TARGET_COL].shift(1)
     df_ml["lag_2"]      = df_ml[params.TARGET_COL].shift(2)
     df_ml["lag_3"]      = df_ml[params.TARGET_COL].shift(3)
     df_ml["lag_12"]     = df_ml[params.TARGET_COL].shift(12)
-
-    # A supprimer
-
     df_ml["moyenne_3m"] = df_ml[params.TARGET_COL].rolling(window=3).mean()
     df_ml["moyenne_6m"] = df_ml[params.TARGET_COL].rolling(window=6).mean()
     df_ml = df_ml.dropna()
@@ -109,7 +113,10 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     print(f"✅ preprocess() done — {len(df_ml)} mois | {df_ml.shape[1]} colonnes\n")
     return df_ml
 
+
 def preprocess_slim(df: pd.DataFrame) -> pd.DataFrame:
+    """ DONNEES MENSUELLES"""
+
     y_mensuel = df[params.TARGET_COL].resample("ME").mean()
 
     # Feature engineering
@@ -129,42 +136,10 @@ def preprocess_slim(df: pd.DataFrame) -> pd.DataFrame:
 
 
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# 3. TRAIN / TEST SPLIT
-# ══════════════════════════════════════════════════════════════════════════════
-
-def split_data(df_ml: pd.DataFrame):
+def train(X_train_df: pd.DataFrame, y_train_df: pd.Series,
+          pick_model = None,
+          optimize = False):
     """
-    Découpe en X_train, X_test, y_train, y_test.
-    Test = Mars → Mai 2026 (3 derniers mois).
-    """
-    print(Fore.MAGENTA + "\n⭐️ Use case: split_data" + Style.RESET_ALL)
-
-    cols = [c for c in df_ml.columns if c in FEATURE_COLS]
-
-    X = df_ml[cols]
-    y = df_ml[params.TARGET_COL]
-
-    X_train_df = X.loc[:TRAIN_END]
-    X_test_df  = X.loc[TEST_START:TEST_END]
-    y_train_df = y.loc[:TRAIN_END]
-    y_test_df  = y.loc[TEST_START:TEST_END]
-
-    print(f"✅ split_data() done — Train : {len(X_train_df)} mois | Test : {len(X_test_df)} mois\n")
-    return X_train_df, X_test_df, y_train_df, y_test_df
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# 4. TRAIN
-# ══════════════════════════════════════════════════════════════════════════════
-
-def train(X_train_df: pd.DataFrame, y_train_df: pd.Series, optimize: bool = True):
-    """
-    Optimise et entraîne le modèle XGBoost.
-
-    Parameters
-    ----------
     X_train, y_train : données d'entraînement
     optimize         : True → GridSearchCV | False → hyperparamètres par défaut
 
@@ -172,29 +147,61 @@ def train(X_train_df: pd.DataFrame, y_train_df: pd.Series, optimize: bool = True
     -------
     (model, history)
     """
-    print(Fore.MAGENTA + "\n⭐️ Use case: train" + Style.RESET_ALL)
 
-    if optimize:
-        model, best_params = optimize_model(
-            X_train_df.values, # Les valeurs NumPy pour l'entraînement du modèle
-            y_train_df.values, # Les valeurs NumPy pour l'entraînement du modèle
-            X_train_df_for_folds=X_train_df, # Le DataFrame pour la génération des folds
-            # date_column_name=DATE_COL,  # Plus nécessaire car optimize_model ne le passe plus à get_folds
-            n_splits_cv=3,
-            val_months_duration=3 # Durée de la validation en mois pour la CV
-        )
-        print(Fore.BLUE + f"\nBest params: {best_params}" + Style.RESET_ALL)
-    else:
-        #on lui passe des hyperparametres de qualité
-        model = initialize_model(n_estimators= 1000,learning_rate= 0.1,max_depth=2,subsample=0.8,colsample_bytree =0.6, min_child_weight=5,random_state = 42)
-
-    model, history = train_model(model, X_train_df.values, y_train_df.values)
-
-    print("✅ train() done \n")
-    return model, history
+    if not pick_model: # local override of the model
+        pick_model = MODEL_TYPE
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ════════════ CAS 1 : BASELINE NAÏVE ════════════
+    if pick_model == 'BASE':
+        print("⏳ Initialisation de la persistance annuelle (J-365)...")
+        model = BaselineLastYear()
+        model.fit(X_train_df, y_train_df)
+        print("✅ train() done — Baseline prête.")
+        history = {}
+        return model, history
+
+# =============================================================================================
+    if pick_model == 'LASSO':
+        print(Fore.MAGENTA + "\nUse case: train (Mode Baseline Lasso)" + Style.RESET_ALL)
+        model = Lasso(alpha=0.01, random_state=42)
+        model.fit(X_train_df.values, y_train_df.values)
+
+        history = {}
+        print("✅ train() done — Modèle Lasso entraîné.\n")
+        return model, history
+
+    print(Fore.MAGENTA + "\nUse case: train" + Style.RESET_ALL)
+
+# =============================================================================================
+    if pick_model == 'XGB':
+        print(Fore.MAGENTA + "\n⭐️ Use case: train (Mode XGB)" + Style.RESET_ALL)
+        if optimize:
+            model, best_params = optimize_model(
+                X_train_df.values, # Les valeurs NumPy pour l'entraînement du modèle
+                y_train_df.values, # Les valeurs NumPy pour l'entraînement du modèle
+                X_train_df_for_folds=X_train_df, # Le DataFrame pour la génération des folds
+                # date_column_name=DATE_COL,  # Plus nécessaire car optimize_model ne le passe plus à get_folds
+                n_splits_cv=3,
+                val_months_duration=3 # Durée de la validation en mois pour la CV
+            )
+            print(Fore.BLUE + f"\nBest params: {best_params}" + Style.RESET_ALL)
+        else:
+            #on lui passe des hyperparametres de qualité
+            model = initialize_model(n_estimators= 1000,
+                                    learning_rate= 0.1,
+                                    max_depth=2,
+                                    subsample=0.8,
+                                    colsample_bytree =0.6,
+                                    min_child_weight=5,
+                                    random_state = 42)
+
+        model, history = train_model(model, X_train_df.values, y_train_df.values)
+
+        print("✅ train() done \n")
+        return model, history
+
+
 # 5. EVALUATE
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -283,31 +290,105 @@ def evaluate_deeper(X_df: pd.DataFrame, y_df: pd.Series, splits,
     return metrics_df, all_predictions
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 6. PREDICT — prévision 13 prochaines semaines
+# 6. PREDICT — prévision sur 13 prochaines semaines
 # ══════════════════════════════════════════════════════════════════════════════
 
 
 def pred(model, df_ml: pd.DataFrame) -> pd.Series:
     """
-    Génère les prévisions sur toute la période de test (Mars → Mai 2026),
+    Génère les prévisions sur toute la période de test ( Printemps ),
     soit environ 12 à 13 semaines selon le calendrier.
     """
     print(Fore.MAGENTA + "\n⭐️ Use case: pred" + Style.RESET_ALL)
 
-    # 1. On filtre df_ml pour ne garder QUE la période cible (Mars à Mai 2026)
-    # C'est exactement les mêmes dates que ton X_test
+    # On filtre df_ml pour ne garder QUE la période cible (Printemps)
     df_futur = df_ml.loc[params.EVALUATION_START_DATE:TEST_END]
-
-    # 2. On extrait les features matricielles (X) pour cette période
     X_future = df_futur[FEATURE_COLS].values
 
-    # 3. XGBoost génère autant de prédictions qu'il y a de lignes (12 ou 13)
+    # Le modèle génère autant de prédictions qu'il y a de lignes
+    # WARNING : ceci est une prevision LIEE
+    # DATA LEAKAGE
     y_pred = predict_model(model, X_future)
 
-    # 4. On crée la Series Pandas en utilisant directement l'index temporel réel de cette période
-    forecast = pd.Series(y_pred, index=df_futur.index, name=params.TARGET_COL)
+    # On crée la Series Pandas en utilisant directement l'index temporel réel de cette période
+    forecast = pd.Series(y_pred, index=df_futur.index,
+                         name=params.TARGET_COL)
 
     print(f"\n✅ pred() done — Predicted {len(forecast)} weeks:\n{forecast.to_string()}\n")
+    return forecast
+
+
+def pred_future(model, df_ml: pd.DataFrame, scaler, n_weeks: int = 13, scenario = 'sec') -> pd.Series:
+    """
+    Génère les prévisions sur les n_weeks prochaines semaines (futur réel).
+    Utilise une boucle autorégressive — chaque semaine prédit la suivante.
+    """
+    print(Fore.MAGENTA + "\n⭐️ Use case: pred_future" + Style.RESET_ALL)
+
+    df_future = df_ml.copy()
+    predictions = []
+
+    # TODO : A ENLEVER
+    # VERSION LITE - sans ['PC1_lag_1',  'PC2_lag_1', 'PC3_lag_1' ]
+    TRAINING_FEATURES =  ['semaine_sin', 'semaine_cos',
+                            'niveau_nappe_eau_lag_1', 'niveau_nappe_eau_lag_2', 'niveau_nappe_eau_lag_3',
+                            'niveau_nappe_eau_lag_4',
+                            'niveau_nappe_eau_lag_52',
+                            'PU_synth_lag_1', 'PU_synth_lag_2', 'PU_synth_lag_3', 'PU_synth_lag_4'
+                            ]
+
+
+    if scenario == 'saison':
+        # groupe par numéro de semaine (1 à 53)
+        moy_hebdo_pu = df_ml.groupby(df_ml.index.isocalendar().week)["PU_synth_lag_1"].mean()
+
+    # Extraire la moyenne et l'écart-type dans le scaler pour le niveau nappe
+    index_col = list(scaler.feature_names_in_).index("niveau_nappe_eau_lag_1")
+    moyenne_col, ecart_type_col = scaler.mean_[index_col], scaler.scale_[index_col]
+
+    for i in range(n_weeks):
+
+        # prevision à date t (lag 0)
+        last_row = df_future[TRAINING_FEATURES].tail(1).values
+        y_next = predict_model(model, last_row)[0]
+        # il FAUDRA scaler
+
+        next_date = df_future.index[-1] + pd.Timedelta(weeks=1)
+        semaine = next_date.isocalendar().week
+
+        if scenario == 'sec':
+            current_pu = -1.0
+        elif scenario == 'neutre':
+            current_pu = 0.0
+        elif scenario == 'saison':
+            current_pu = moy_hebdo_pu.get(semaine, 0.0)
+
+
+        new_row = pd.DataFrame({
+            "semaine_sin":    [np.sin(2 * np.pi * semaine / 52)]   ,
+            "semaine_cos":    [np.cos(2 * np.pi * semaine / 52)]   ,
+            "niveau_nappe_eau_lag_1":      [(y_next - moyenne_col) / ecart_type_col],
+            "niveau_nappe_eau_lag_2":      [df_future["niveau_nappe_eau_lag_1"].iloc[-1]],
+            "niveau_nappe_eau_lag_3":      [df_future["niveau_nappe_eau_lag_2"].iloc[-1]],
+            "niveau_nappe_eau_lag_4":      [df_future["niveau_nappe_eau_lag_3"].iloc[-1]],
+            "niveau_nappe_eau_lag_52":     [df_future["niveau_nappe_eau_lag_1"].iloc[-51]],
+
+            "PU_synth_lag_1" :[current_pu],
+            "PU_synth_lag_2" :[df_future["PU_synth_lag_1"].iloc[-1]],
+            "PU_synth_lag_3" :[df_future["PU_synth_lag_2"].iloc[-1]],
+            "PU_synth_lag_4" :[df_future["PU_synth_lag_3"].iloc[-1]],
+        }, index=[next_date])
+
+        df_future = pd.concat([df_future, new_row])
+        predictions.append((next_date, round(float(y_next), 3)))
+
+    forecast = pd.Series(
+        [p[1] for p in predictions],
+        index=[p[0] for p in predictions],
+        name=params.TARGET_COL
+    )
+
+    print(f"\n✅ pred_future() done — {len(forecast)} semaines prédites\n")
     return forecast
 
 
@@ -317,19 +398,25 @@ def pred(model, df_ml: pd.DataFrame) -> pd.Series:
 
 if __name__ == "__main__":
 
-    # 1. Données — une seule fois
-    #df    = load_data() # du CSV
     # load from big query
     #df = clean_piezo(load_piezo_bq(DATA_CODE_PIEZO))
-    df = clean_piezo2(load_piezo_bq(DATA_CODE_PIEZO))
+    df = load_plean(DATA_CODE_PIEZO)
 
     if params.DATE_COL in df.columns:
         df[params.DATE_COL] = pd.to_datetime(df[params.DATE_COL])
         df.set_index(params.DATE_COL, inplace=True)
     df = df.sort_index()
 
-    df_ml = preprocess(df)  # OR preprocess_week ???
-    X_train_df, X_test_df, y_train_df, y_test_df = split_data(df_ml)
+    df_ml = preprocess_week(df)  # OR preprocess_week ???
+
+    X_train_df, X_test_df, y_train_df, y_test_df = split_data(
+        df_ml,
+        feature_cols=FEATURE_COLS,
+        target_col=params.TARGET_COL,
+        train_end=TRAIN_END,
+        test_start=TEST_START,
+        test_end=TEST_END
+    )
 
     # --- Zone de test pour visualiser les splits de cross-validation ---
     print(Fore.CYAN + "\n--- Visualisation des splits de cross-validation annuels ---" + Style.RESET_ALL)
@@ -358,9 +445,6 @@ if __name__ == "__main__":
     print(Fore.CYAN + "--- Fin de la visualisation des splits ---" + Style.RESET_ALL)
 
 
-
-
-
     # 2. Train — optimize=True pour GridSearchCV
     model, history = train(X_train_df, y_train_df, optimize=False)
 
@@ -377,45 +461,3 @@ if __name__ == "__main__":
 
     # 4. Predict — prévision 3 mois futurs
     forecast = pred(model, df_ml)
-
-
-# probleme de dataleakage ???
-def pred_future(model, df_ml: pd.DataFrame, n_weeks: int = 13) -> pd.Series:
-    """
-    Génère les prévisions sur les n_weeks prochaines semaines (futur réel).
-    Utilise une boucle autorégressive — chaque semaine prédit la suivante.
-    """
-    print(Fore.MAGENTA + "\n⭐️ Use case: pred_future" + Style.RESET_ALL)
-
-    FEATURE_COLS = ["semaine", "lag_1", "lag_2", "lag_3", "lag_4", "lag_52", "moyenne_3w", "moyenne_6w"]
-    df_future = df_ml.copy()
-    predictions = []
-
-    for i in range(n_weeks):
-        last_row = df_future[FEATURE_COLS].tail(1).values
-        y_next = predict_model(model, last_row)[0]
-        next_date = df_future.index[-1] + pd.Timedelta(weeks=1)
-
-        new_row = pd.DataFrame({
-            "niveau_nappe_eau": [y_next],
-            "semaine":    [next_date.isocalendar().week],
-            "lag_1":      [y_next],
-            "lag_2":      [df_future["niveau_nappe_eau"].iloc[-1]],
-            "lag_3":      [df_future["niveau_nappe_eau"].iloc[-2]],
-            "lag_4":      [df_future["niveau_nappe_eau"].iloc[-3]],
-            "lag_52":     [df_future["niveau_nappe_eau"].iloc[-51]],
-            "moyenne_3w": [df_future["niveau_nappe_eau"].tail(3).mean()],
-            "moyenne_6w": [df_future["niveau_nappe_eau"].tail(6).mean()],
-        }, index=[next_date])
-
-        df_future = pd.concat([df_future, new_row])
-        predictions.append((next_date, round(float(y_next), 3)))
-
-    forecast = pd.Series(
-        [p[1] for p in predictions],
-        index=[p[0] for p in predictions],
-        name=params.TARGET_COL
-    )
-
-    print(f"\n✅ pred_future() done — {len(forecast)} semaines prédites\n")
-    return forecast

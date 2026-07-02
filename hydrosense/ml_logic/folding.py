@@ -32,6 +32,7 @@ def get_folds(dates_series: pd.DatetimeIndex, n_splits: int = 5, min_train_years
 
     # Obtenir les partitions annuelles (listes d'années de train, année de val)
     yearly_splits = split_years(dates_series, n_splits, min_train_years)
+    
     # Et les affiner en fonction du nb de mois
     # TODO gerer le cas où la donnée est hebdomadaire et non mensuelle
     final_splits = refine_split(dates_series, yearly_splits, val_months_duration, random_state=42)
