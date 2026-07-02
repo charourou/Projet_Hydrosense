@@ -90,7 +90,7 @@ Le choix du modèle final s'est appuyé sur un benchmark élargi à 19 nappes (a
 
 Random Forest et XGBoost se disputent la meilleure performance. SARIMA a été utilisé comme modèle univarié de référence, LASSO en multivarié pour valider le choix des features, et XGBoost a permis de mettre en évidence une tendance à l'overfitting.
 
-Après plusieurs test, nous avons réussi à affiner notament XGBoost et il nous donne les résultats suivant |**MAE : 0.37** | **RMSSE : 1.39** |
+Après plusieurs tests, nous avons réussi à affiner notament XGBoost et il nous donne les résultats suivants: |**MAE : 0.37** | **RMSSE : 1.39** |
 
 ---
 
