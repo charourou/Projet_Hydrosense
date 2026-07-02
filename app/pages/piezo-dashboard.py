@@ -234,7 +234,7 @@ print(f"x_max: {x_max}")
 print(f"df_pred_val dates: {df_pred_val['date_mesure'].tolist()}")
 
 lignes = alt.Chart(df_total).mark_line(strokeWidth=3).encode(
-    x=alt.X("date_mesure:T", title="Date de mesure",
+    x=alt.X("date_mesure:T", title=f"Date de mesure ({pd.Timestamp.today().year})",
             scale=alt.Scale(domain=[
                 x_min.strftime("%Y-%m-%d"),
                 x_max.strftime("%Y-%m-%d")
