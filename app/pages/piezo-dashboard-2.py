@@ -287,26 +287,15 @@ for _, row in df_map_dept.iterrows():
             tooltip=f"{row['bss_id']} — {row['nom_commune']}",
         ).add_to(m)
 
-map_data = st_folium(
+# Clic sur les markers désactivé (returned_objects vide) : la sélection
+# du piézomètre se fait uniquement via le selectbox.
+st_folium(
     m,
     width=None,
     height=900,
-    returned_objects=["last_object_clicked_tooltip"],
+    returned_objects=[],
     key="map_fs",
 )
-
-# ── Intercepter le clic sur un marker ────────────────────────────────────────
-# st_folium retourne le tooltip du dernier objet cliqué.
-# Nos tooltips ont le format "BSS001XXXX — Commune"
-# On extrait le bss_id (partie avant " — ") et on met à jour session_state.
-_clicked_tooltip = (map_data or {}).get("last_object_clicked_tooltip") or ""
-if _clicked_tooltip and " — " in _clicked_tooltip:
-    _clicked_bss = _clicked_tooltip.split(" — ")[0].strip()
-    # Vérifier que ce bss_id existe dans le catalogue
-    if _clicked_bss in df_catalog["bss_id"].values:
-        if _clicked_bss != st.session_state["selected_bss"]:
-            st.session_state["selected_bss"] = _clicked_bss
-            st.rerun()
 
 # ══════════════════════════════════════════════════════════════════════════════
 # MINI GRAPHIQUE ALTAIR
