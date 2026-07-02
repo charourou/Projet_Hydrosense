@@ -12,7 +12,7 @@ from hydrosense.preprocess.cleaning import clean_piezo
 from hydrosense.preprocess.preprocessor import preprocess_week, make_preproc_week
 from hydrosense.interface.main import train, pred_future, pred
 
-
+from hydrosense import params
 
 
 load_dotenv(override=True)
@@ -254,7 +254,11 @@ def predict(bss_id: str):
     """Prévision XGBoost autorégressive sur 13 semaines."""
 
     df_clean = load_plean(bss_id)
-    Xt, Xe, yt, ye, scaler = make_preproc_week(df_clean)
+    Xt, Xe, yt, ye, scaler = make_preproc_week(df_clean, params.FEATURE_COLS, params.TARGET_COL,
+                                               params.TRAIN_END,
+                                               params.TEST_START,
+                                               params.TEST_END)
+
     # TODO :
     # entrainer le modele sur toute la donnée ???
     # MAIS ON NE PEUT PAS MODIFIER FACILEMENT TRAIN TEST START ET END
@@ -266,9 +270,11 @@ def predict(bss_id: str):
     ytot = pd.concat([yt, ye])
 
 
-    model, _ = train(Xtot, ytot, optimize=False)
+    model, _ = train(Xt, yt, pick_model= 'XGB' ,optimize=False, )
+    forecast = pred_future(model, Xt, scaler,  n_weeks=13, scenario = 'saison')
 
-    forecast = pred_future(model, Xtot, n_weeks=13)
+   # 2 forecast. LASSO + sec
+
 
     return {
         "bss_id": bss_id,

@@ -17,6 +17,10 @@ end = time.perf_counter()
 print(f"\n✅ XGBoost loaded ({round(end - start, 2)}s)")
 
 
+
+
+
+
 def initialize_model(
     n_estimators: int = 1000,
     learning_rate: float = 0.1,
@@ -55,7 +59,7 @@ def initialize_model(
         verbosity=0
     )
 
-    print("Model initialized")
+    print("Model initialized", )
     return model
 
 
@@ -135,6 +139,7 @@ def train_model(
     y_val: Optional[np.ndarray] = None,
     early_stopping_rounds: int = 20
 ) -> Tuple[XGBRegressor, dict]:
+
     """
     Fit the XGBoost model. Supports early stopping if validation data is provided.
 
@@ -182,9 +187,8 @@ def train_model(
     return model, history
 
 def evaluate_model(
-    model: XGBRegressor,
-    X: np.ndarray,
-    y: np.ndarray,
+    model,
+    X: np.ndarray, y: np.ndarray,
     y_train: Optional[np.ndarray] = None,
     verbose = True
         ) -> dict:
@@ -202,10 +206,6 @@ def evaluate_model(
     metrics dict : mae, rmse, r2, max_error
     """
     print(Fore.BLUE + f"\nEvaluating model on {len(X)} rows..." + Style.RESET_ALL)
-
-    if model is None:
-        print(f"\n❌ No model to evaluate")
-        return None
 
     y_pred = model.predict(X)
 
