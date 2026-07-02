@@ -1,0 +1,30 @@
+name: Keep Streamlit app awake
+
+on:
+  schedule:
+    # Toutes les 6 heures (Streamlit Cloud endort l'app après ~12h d'inactivité)
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+jobs:
+  keep-streamlit-awake:
+    name: keep-streamlit-awake
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Playwright and headless Chromium
+        run: |
+          pip install playwright
+          python -m playwright install --with-deps chromium
+
+      - name: Ping Streamlit app (wake it up if asleep)
+        run: python scripts/ping_streamlit.py
