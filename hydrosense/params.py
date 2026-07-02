@@ -12,7 +12,10 @@ CLIM_DATASET_ID=os.environ.get("CLIM_DATASET_ID")
 BUCKET_NAME = os.environ.get("BUCKET_NAME")
 INSTANCE = os.environ.get("INSTANCE")
 
-
+FEATURE_COLS = ["semaine_sin","semaine_cos", "PU_synth"]
+TRAIN_END  = "2026-02-28"
+TEST_START = "2026-03-01"
+TEST_END   = "2026-05-31"
 
 
 MLFLOW_TRACKING_URI = ''
