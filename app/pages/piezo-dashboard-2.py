@@ -251,7 +251,7 @@ statut_nom, statut_colors = _get_statut(derniere_val, _seuils)
 # ══════════════════════════════════════════════════════════════════════════════
 # CARTE FOLIUM
 # ══════════════════════════════════════════════════════════════════════════════
-m = folium.Map(location=[46.5, 2.5], zoom_start=6, tiles="CartoDB Positron", prefer_canvas=True)
+m = folium.Map(location=[46.5, 2.5], zoom_start=6, tiles="OpenStreetMap", prefer_canvas=True)
 
 # Cacher tous les contrôles Leaflet (zoom + attribution)
 m.get_root().html.add_child(folium.Element("""

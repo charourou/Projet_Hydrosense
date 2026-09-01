@@ -11,7 +11,7 @@ st.title("🗺️ Carte des piézomètres")
 
 @st.cache_data
 def build_map(df: pd.DataFrame) -> folium.Map:
-    m = folium.Map(location=[46.5, 2.5], zoom_start=6, tiles="CartoDB Positron", prefer_canvas=True)
+    m = folium.Map(location=[46.5, 2.5], zoom_start=6, tiles="OpenStreetMap", prefer_canvas=True)
     m.get_root().html.add_child(folium.Element("""
 <style>
 .leaflet-control-container { display: none !important; }
