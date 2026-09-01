@@ -5,10 +5,12 @@ Dashboard principal : historique + prévision XGBoost + seuils de gestion.
 Les prévisions sont chargées via l'API FastAPI (Cloud Run).
 """
 
+import folium
 import requests
 import altair as alt
 import pandas as pd
 import streamlit as st
+from streamlit_folium import st_folium
 
 from utils.api_client import load_single_piezo_map, load_catalog_ml, load_seuils_interm, load_historique, load_pluie, API_URL
 from utils.theme import SEUIL_COLORS, SEUIL_ORDER, DESIGN_TOKENS
@@ -267,8 +269,25 @@ col_gauche, col_droite = st.columns([2, 1])
 
 with col_gauche:
     if not df_piezo_unique.empty:
-        df_map = df_piezo_unique.rename(columns={"x": "longitude", "y": "latitude"})
-        st.map(df_map, zoom=10)
+        row_map = df_piezo_unique.iloc[0]
+        m = folium.Map(location=[row_map["y"], row_map["x"]], zoom_start=10, tiles="OpenStreetMap", prefer_canvas=True)
+        m.get_root().html.add_child(folium.Element("""
+<style>
+.leaflet-control-container { display: none !important; }
+</style>
+"""))
+        folium.CircleMarker(
+            location=[row_map["y"], row_map["x"]],
+            radius=7,
+            color="#2484e5",
+            fill=True,
+            fill_color="#2484e5",
+            fill_opacity=0.55,
+            weight=1.5,
+            tooltip=f"{row_map['bss_id']} — {row_map['nom_commune']}",
+            popup=f"{row_map['bss_id']} — {row_map['nom_commune']} ({row_map['nom_departement']})",
+        ).add_to(m)
+        st_folium(m, width=None, height=350, returned_objects=[])
     else:
         st.warning("Données géographiques non disponibles.")
 
